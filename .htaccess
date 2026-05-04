@@ -1,0 +1,10 @@
+DirectoryIndex index.html index.php
+
+Options -Indexes
+
+RewriteEngine On
+
+# Forçar HTTPS sem loop na Hostinger
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

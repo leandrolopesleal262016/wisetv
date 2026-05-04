@@ -1,0 +1,1991 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1845d8" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="WiseTV Painel" />
+  <meta name="wisetv-build" content="2026-03-25-hostinger-fix-1" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/app-icon.svg" type="image/svg+xml" />
+  <title>WiseTV Painel</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --text: #1a1d2a;
+      --muted: #6c7285;
+      --primary: #1845d8;
+      --primary-2: #2f61ff;
+      --line: #e2e7f5;
+      --danger: #cc2f2f;
+      --ok: #1f8a4d;
+      --radius: 14px;
+      --shadow: 0 10px 35px rgba(14, 20, 45, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #eaf0ff 0%, var(--bg) 50%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 0 16px calc(30px + env(safe-area-inset-bottom));
+    }
+
+    .header {
+      background: linear-gradient(130deg, var(--primary), var(--primary-2));
+      color: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    .header h1 { margin: 0; font-size: 1.8rem; letter-spacing: 0.01em; }
+    .header p { margin: 8px 0 0; opacity: 0.93; }
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 6px 18px rgba(22, 29, 51, 0.06);
+      padding: 16px;
+    }
+
+    h2 { margin: 0 0 12px; font-size: 1.05rem; }
+
+    label {
+      display: block;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    select,
+    input[type="text"],
+    input[type="number"],
+    input[type="file"] {
+      width: 100%;
+      border: 1px solid #cfd7ec;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+
+    input[readonly] {
+      background: #f7f9ff;
+      color: #34415f;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.92rem;
+      cursor: pointer;
+      color: #fff;
+      background: var(--primary);
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-secondary { background: #4d5672; }
+    .btn-ok { background: var(--ok); }
+    .btn-danger { background: var(--danger); }
+
+    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .row > * { flex: 1; }
+
+    .small { font-size: 0.84rem; color: var(--muted); margin-top: 6px; }
+    .section-divider {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 14px 0;
+    }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .stack-actions { margin-bottom: 10px; }
+    .is-hidden { display: none !important; }
+
+    .upload-loading {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.86rem;
+      color: var(--muted);
+      margin-top: 2px;
+      margin-bottom: 6px;
+    }
+    .upload-loading.is-visible { display: inline-flex; }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #cfd7ec;
+      border-top-color: #1845d8;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    #status {
+      margin-top: 10px;
+      min-height: 20px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .status-ok { color: var(--ok); }
+    .status-error { color: var(--danger); }
+
+    .playlist-list { display: grid; gap: 10px; margin-top: 12px; }
+
+    .playlist-item {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fcfdff;
+      padding: 12px;
+    }
+    .playlist-item.dragging { opacity: 0.5; }
+
+    .playlist-head { display: flex; gap: 12px; align-items: center; }
+    .drag-handle {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      border: 1px solid #d8e0f4;
+      background: #eef2fb;
+      color: #5a6280;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      margin-right: 2px;
+      cursor: grab;
+      flex: 0 0 auto;
+      user-select: none;
+    }
+
+    .playlist-thumb {
+      width: 96px;
+      height: 64px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #d8e0f4;
+      background: #eef2fb;
+      flex: 0 0 auto;
+    }
+
+    .playlist-meta { min-width: 0; flex: 1; }
+    .playlist-meta strong { display: block; margin-bottom: 6px; word-break: break-all; }
+
+    .media-selected-card,
+    .media-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fcfdff;
+      padding: 10px;
+    }
+    .media-selected-card {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .media-gallery {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 10px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .media-card {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+    .media-card.is-active,
+    .media-selected-card.is-active {
+      border-color: #9bb3ff;
+      box-shadow: 0 0 0 2px rgba(47, 97, 255, 0.12);
+    }
+    .media-thumb-box {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #eef2fb;
+      border: 1px solid #d8e0f4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .media-thumb-box img,
+    .media-thumb-box video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .media-thumb-fallback {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #5a6280;
+      letter-spacing: 0.04em;
+    }
+    .media-card-meta {
+      min-width: 0;
+    }
+    .media-card-meta strong {
+      display: block;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+    .media-card-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .upload-policy {
+      margin-top: 4px;
+      margin-bottom: 8px;
+    }
+    .preview-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      background: rgba(10, 16, 34, 0.84);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .preview-dialog {
+      width: min(960px, 100%);
+      max-height: min(90vh, 760px);
+      background: #09101d;
+      color: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .preview-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .preview-title {
+      font-size: 0.94rem;
+      font-weight: 700;
+      word-break: break-all;
+    }
+    .preview-stage {
+      min-height: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      background: #050911;
+    }
+    .preview-stage img,
+    .preview-stage video {
+      max-width: 100%;
+      max-height: 72vh;
+      border-radius: 12px;
+      background: #000;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 16px 10px;
+      border: 1px dashed #cad3eb;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .tv-status {
+      margin-top: 14px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .tv-status h3 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+    }
+    .tv-status-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    .tv-status-table th,
+    .tv-status-table td {
+      border-bottom: 1px solid #e8edf8;
+      text-align: left;
+      padding: 6px 4px;
+      vertical-align: top;
+    }
+    .tv-status-name {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .tv-status-code {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .tv-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      vertical-align: middle;
+      margin-right: 6px;
+      background: #c7cedf;
+    }
+    .tv-dot.online { background: #1f8a4d; }
+    .tv-dot.offline { background: #cc2f2f; }
+
+    @media (max-width: 900px) {
+      .page { margin: 10px auto; padding: 0 10px calc(20px + env(safe-area-inset-bottom)); }
+      .grid { grid-template-columns: 1fr; }
+      .header { padding: 16px; }
+      .card { padding: 12px; border-radius: 12px; }
+      .playlist-head { align-items: flex-start; }
+      .playlist-thumb { width: 84px; height: 56px; }
+      select,
+      input[type="text"],
+      input[type="number"],
+      input[type="file"],
+      button {
+        min-height: 42px;
+        font-size: 16px;
+      }
+    }
+
+    @media (max-width: 540px) {
+      .header h1 { font-size: 1.45rem; }
+      .header p { font-size: 0.9rem; }
+      .row { flex-direction: column; }
+      .playlist-head { gap: 8px; }
+      .playlist-thumb { width: 72px; height: 48px; }
+      .drag-handle { width: 24px; height: 24px; }
+      .media-selected-card,
+      .media-card {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header">
+      <div class="header-top">
+        <h1>Painel WiseTV</h1>
+        <button id="installBtn" class="btn-secondary is-hidden" type="button">Instalar app</button>
+      </div>
+      <p>Cadastre conteudos, nomeie TVs, gerencie midias e publique a playlist.</p>
+    </section>
+
+    <section class="grid">
+      <aside class="card">
+        <h2>TV e Conteudo</h2>
+
+        <label for="deviceSelect">TV (device)</label>
+        <select id="deviceSelect"></select>
+
+        <label for="deviceFriendlyInput">Nome amigavel da TV selecionada</label>
+        <div class="row">
+          <input id="deviceFriendlyInput" type="text" placeholder="Ex: Cliente Loja Centro" />
+          <button id="saveDeviceBtn" class="btn-secondary" type="button">Salvar nome</button>
+        </div>
+
+        <label for="deviceIdInput">ID interno da TV</label>
+        <input id="deviceIdInput" type="text" readonly />
+
+        <label for="deviceEndpointInput">URL para configurar no Fully Kiosk</label>
+        <input id="deviceEndpointInput" type="text" readonly />
+        <div class="small">Use esta URL como pagina inicial da TV no Fully Kiosk para o cliente selecionado.</div>
+
+        <div class="actions stack-actions" style="margin-top:14px;">
+          <button id="previewBtn" class="btn-ok" type="button">Visualizar</button>
+          <button id="deleteDeviceBtn" class="btn-danger" type="button">Remover TV</button>
+        </div>
+
+        <hr class="section-divider">
+
+        <label for="newDeviceFriendlyInput">Nova TV</label>
+        <div class="row">
+          <input id="newDeviceFriendlyInput" type="text" placeholder="Nome amigavel do cliente" />
+          <button id="createDeviceBtn" type="button">Criar TV</button>
+        </div>
+        <div class="small">Novas TVs recebem IDs automaticos no padrao tv01, tv02, tv03...</div>
+
+        <hr class="section-divider">
+
+        <label for="mediaSelect">Midia disponivel</label>
+        <select id="mediaSelect"></select>
+        <div id="selectedMediaCard" class="media-selected-card empty">Selecione uma midia para ver a miniatura.</div>
+        <div class="actions stack-actions">
+          <button id="addMediaBtn" class="btn-ok" type="button">Adicionar na playlist</button>
+          <button id="viewMediaBtn" class="btn-secondary" type="button">Visualizar midia</button>
+        </div>
+        <div id="mediaGallery" class="media-gallery"></div>
+        <div class="small">As midias mais recentes aparecem primeiro. Clique em uma miniatura para selecionar ou visualizar.</div>
+
+        <label for="mediaRenameInput">Renomear midia selecionada</label>
+        <div class="row">
+          <input id="mediaRenameInput" type="text" placeholder="Ex: campanha_cliente.mp4" />
+          <button id="renameMediaBtn" class="btn-secondary" type="button">Renomear</button>
+        </div>
+        <div class="actions stack-actions">
+          <button id="deleteMediaBtn" class="btn-danger" type="button">Excluir midia</button>
+        </div>
+        <div class="small">Ao excluir uma midia, ela tambem e removida das playlists que a utilizam.</div>
+
+        <div id="durationWrap">
+          <label for="durationInput">Duracao (segundos)</label>
+          <input id="durationInput" type="number" min="1" value="10" />
+        </div>
+        <div id="durationHint" class="small">A duracao so e usada para imagens.</div>
+
+        <hr class="section-divider">
+
+        <label for="uploadInput">Enviar nova midia (salva apenas na pasta /midias)</label>
+        <input id="uploadInput" type="file" accept=".jpeg,.jpg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v" />
+        <div id="uploadLoading" class="upload-loading">
+          <span class="spinner"></span>
+          <span>Enviando arquivo...</span>
+        </div>
+        <div id="uploadPolicyHint" class="small upload-policy"></div>
+
+        <hr class="section-divider">
+
+        <label for="youtubeUrlInput">YouTube (video normal)</label>
+        <input id="youtubeUrlInput" type="text" placeholder="Cole URL do YouTube (watch, youtu.be, embed)" />
+        <div class="actions stack-actions">
+          <button id="addYoutubeBtn" type="button">YouTube</button>
+        </div>
+
+        <label for="liveEmbedInput">Live (URL embed)</label>
+        <input id="liveEmbedInput" type="text" placeholder="https://www.youtube.com/embed/..." />
+        <div class="actions">
+          <button id="addLiveEmbedBtn" type="button">Live</button>
+        </div>
+
+        <div id="status"></div>
+      </aside>
+
+      <section class="card">
+        <h2 id="playlistTitle">Playlist da TV</h2>
+        <div id="playlistContainer" class="playlist-list"></div>
+
+        <div class="tv-status">
+          <h3>TVs Online</h3>
+          <div id="tvStatusContainer" class="small">Carregando status...</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="mediaPreviewModal" class="preview-modal is-hidden">
+    <div class="preview-dialog">
+      <div class="preview-bar">
+        <div id="mediaPreviewTitle" class="preview-title">Visualizar midia</div>
+        <button id="closeMediaPreviewBtn" class="btn-secondary" type="button">Fechar</button>
+      </div>
+      <div id="mediaPreviewStage" class="preview-stage"></div>
+    </div>
+  </div>
+
+  <script>
+    const buildTag = "2026-03-25-hostinger-fix-1";
+    const apiBase = new URL("admin_api.php", window.location.href).toString();
+    const appBase = new URL("../", window.location.href);
+    const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
+
+    const deviceSelect = document.getElementById("deviceSelect");
+    const deviceFriendlyInput = document.getElementById("deviceFriendlyInput");
+    const deviceIdInput = document.getElementById("deviceIdInput");
+    const deviceEndpointInput = document.getElementById("deviceEndpointInput");
+    const newDeviceFriendlyInput = document.getElementById("newDeviceFriendlyInput");
+    const mediaSelect = document.getElementById("mediaSelect");
+    const selectedMediaCard = document.getElementById("selectedMediaCard");
+    const mediaGallery = document.getElementById("mediaGallery");
+    const mediaRenameInput = document.getElementById("mediaRenameInput");
+    const durationInput = document.getElementById("durationInput");
+    const durationWrap = document.getElementById("durationWrap");
+    const durationHint = document.getElementById("durationHint");
+    const uploadInput = document.getElementById("uploadInput");
+    const uploadLoadingEl = document.getElementById("uploadLoading");
+    const uploadPolicyHint = document.getElementById("uploadPolicyHint");
+    const youtubeUrlInput = document.getElementById("youtubeUrlInput");
+    const liveEmbedInput = document.getElementById("liveEmbedInput");
+    const statusEl = document.getElementById("status");
+    const playlistTitle = document.getElementById("playlistTitle");
+    const playlistContainer = document.getElementById("playlistContainer");
+    const tvStatusContainer = document.getElementById("tvStatusContainer");
+    const installBtn = document.getElementById("installBtn");
+    const addMediaBtn = document.getElementById("addMediaBtn");
+    const viewMediaBtn = document.getElementById("viewMediaBtn");
+    const renameMediaBtn = document.getElementById("renameMediaBtn");
+    const deleteMediaBtn = document.getElementById("deleteMediaBtn");
+    const saveDeviceBtn = document.getElementById("saveDeviceBtn");
+    const deleteDeviceBtn = document.getElementById("deleteDeviceBtn");
+    const previewBtn = document.getElementById("previewBtn");
+    const mediaPreviewModal = document.getElementById("mediaPreviewModal");
+    const mediaPreviewTitle = document.getElementById("mediaPreviewTitle");
+    const mediaPreviewStage = document.getElementById("mediaPreviewStage");
+    const closeMediaPreviewBtn = document.getElementById("closeMediaPreviewBtn");
+
+    const state = {
+      devices: [],
+      media: [],
+      mediaDurations: {},
+      uploadCapabilities: {
+        ffmpeg_available: false,
+        ffprobe_available: false,
+        auto_convert_above_hd: false,
+        video_max_width: 1920,
+        video_max_height: 1080
+      },
+      deviceStatus: [],
+      selectedDevice: "",
+      selectedMediaName: "",
+      playlist: [],
+      saveTimer: null,
+      isSaving: false,
+      dragFromIndex: -1
+    };
+
+    let deferredInstallPrompt = null;
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message || "";
+      statusEl.className = isError ? "status-error" : "status-ok";
+    }
+
+    function setUploadLoading(isLoading) {
+      uploadLoadingEl.classList.toggle("is-visible", !!isLoading);
+      uploadInput.disabled = !!isLoading;
+    }
+
+    function parseApiResponse(text) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error("API retornou HTML/erro. Verifique se admin_api.php esta acessivel no servidor.");
+      }
+    }
+
+    async function readApiPayload(response) {
+      const text = await response.text();
+      if (!String(text || "").trim()) {
+        return {
+          ok: false,
+          error: `Servidor retornou HTTP ${response.status} sem JSON. Verifique o admin_api.php no servidor.`
+        };
+      }
+      return parseApiResponse(text);
+    }
+
+    async function apiGet(params) {
+      const url = `${apiBase}?${new URLSearchParams(params).toString()}&t=${Date.now()}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await readApiPayload(res);
+      if (!res.ok || !data.ok) throw new Error(data.error || "Erro de comunicacao");
+      return data;
+    }
+
+    async function apiPost(action, payload) {
+      const url = `${apiBase}?action=${encodeURIComponent(action)}&t=${Date.now()}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await readApiPayload(res);
+      if (!res.ok || !data.ok) throw new Error(data.error || "Erro ao salvar");
+      return data;
+    }
+
+    async function apiPostForm(action, formData) {
+      const url = `${apiBase}?action=${encodeURIComponent(action)}&t=${Date.now()}`;
+      const res = await fetch(url, { method: "POST", body: formData });
+      const data = await readApiPayload(res);
+      if (!res.ok || !data.ok) throw new Error(data.error || "Erro no upload");
+      return data;
+    }
+
+    function withAppBase(pathFromRoot) {
+      return `${appBasePath}${pathFromRoot}`.replace(/\/\/+/g, "/");
+    }
+
+    function rewriteHostedMediaPath(rawUrl) {
+      const value = String(rawUrl || "").trim();
+      if (!value) return "";
+
+      try {
+        const parsed = new URL(value, window.location.href);
+        const path = parsed.pathname || "";
+        if (path.includes("/midias/")) {
+          const filename = path.split("/").pop();
+          return filename ? withAppBase(`/midias/${decodeURIComponent(filename)}`) : value;
+        }
+      } catch (e) {
+      }
+
+      if (value.includes("/midias/")) {
+        const filename = value.split("/").pop().split("?")[0];
+        return filename ? withAppBase(`/midias/${decodeURIComponent(filename)}`) : value;
+      }
+
+      return value;
+    }
+
+    function normalizeMediaPath(rawUrl) {
+      const url = String(rawUrl || "").trim();
+      if (!url) return "";
+      if (/^(https?:|data:|blob:)/i.test(url)) return url;
+      if (url.includes("/midias/")) return rewriteHostedMediaPath(url);
+      if (url.startsWith("/midias/")) return withAppBase(url);
+      if (url.startsWith("midias/")) return withAppBase("/" + url);
+      return url;
+    }
+
+    function normalizeEmbedUrl(rawUrl) {
+      const buildYoutubeEmbed = (id) => {
+        return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=0&playsinline=1&rel=0&modestbranding=1&controls=1&enablejsapi=1`;
+      };
+
+      const urlText = String(rawUrl || "").trim();
+      if (!urlText) return "";
+
+      try {
+        const u = new URL(urlText, window.location.href);
+        const host = u.hostname.toLowerCase();
+
+        if (host.includes("youtu.be")) {
+          const id = u.pathname.replace("/", "").trim();
+          if (!id) return "";
+          return buildYoutubeEmbed(id);
+        }
+
+        if (host.includes("youtube.com")) {
+          if (u.pathname.startsWith("/watch")) {
+            const id = u.searchParams.get("v");
+            if (!id) return "";
+            return buildYoutubeEmbed(id);
+          }
+          if (u.pathname.startsWith("/live/")) {
+            const id = u.pathname.split("/").pop();
+            if (!id) return "";
+            return buildYoutubeEmbed(id);
+          }
+          if (u.pathname.startsWith("/shorts/")) {
+            const id = u.pathname.split("/").pop();
+            if (!id) return "";
+            return buildYoutubeEmbed(id);
+          }
+          if (u.pathname.startsWith("/embed/")) {
+            if (!u.hostname.toLowerCase().includes("youtube-nocookie.com")) {
+              u.hostname = "www.youtube-nocookie.com";
+            }
+            if (!u.searchParams.has("autoplay")) u.searchParams.set("autoplay", "1");
+            if (!u.searchParams.has("mute")) u.searchParams.set("mute", "1");
+            if (!u.searchParams.has("playsinline")) u.searchParams.set("playsinline", "1");
+            if (!u.searchParams.has("controls")) u.searchParams.set("controls", "1");
+            if (!u.searchParams.has("enablejsapi")) u.searchParams.set("enablejsapi", "1");
+            return u.toString();
+          }
+        }
+
+        return u.toString();
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function toAbsoluteUrl(url) {
+      if (!url) return "";
+      if (/^(https?:|data:|blob:)/i.test(url)) return url;
+      if (url.startsWith("/")) return `${window.location.origin}${url}`;
+      return new URL(url, window.location.href).toString();
+    }
+
+    function getDeviceRecord(deviceId = state.selectedDevice) {
+      return state.devices.find((item) => item.id === deviceId) || null;
+    }
+
+    function getDeviceLabel(device) {
+      if (!device) return "";
+      const friendly = String(device.friendly_name || device.id || "").trim();
+      const id = String(device.id || "").trim();
+      if (!friendly || friendly === id) return id;
+      return `${friendly} (${id})`;
+    }
+
+    function getSelectedMediaOption() {
+      const option = mediaSelect.options[mediaSelect.selectedIndex];
+      if (!option || !option.value) return null;
+      return option;
+    }
+
+    function getSelectedMedia() {
+      const option = getSelectedMediaOption();
+      if (!option) return null;
+      return {
+        name: option.dataset.name,
+        type: option.dataset.type,
+        url: normalizeMediaPath(option.value)
+      };
+    }
+
+    function getSelectedMediaRecord() {
+      return state.media.find((item) => item.name === state.selectedMediaName) || null;
+    }
+
+    function selectedMediaType() {
+      const option = getSelectedMediaOption();
+      return option ? option.dataset.type : "";
+    }
+
+    function updateDurationVisibility() {
+      const isImage = selectedMediaType() === "image";
+      durationWrap.style.display = isImage ? "block" : "none";
+      durationHint.textContent = isImage
+        ? "Defina por quantos segundos a imagem fica na tela."
+        : "Para videos, a reproducao segue ate o fim do arquivo.";
+    }
+
+    function updatePlaylistTitle() {
+      const device = getDeviceRecord();
+      if (!device) {
+        playlistTitle.textContent = "Playlist da TV";
+        return;
+      }
+
+      const friendlyName = String(device.friendly_name || device.id || "").trim() || device.id;
+      playlistTitle.textContent = `Playlist da TV ${friendlyName}`;
+    }
+
+    function renderUploadPolicyHint() {
+      const width = Number(state.uploadCapabilities.video_max_width || 1920);
+      const height = Number(state.uploadCapabilities.video_max_height || 1080);
+
+      if (state.uploadCapabilities.auto_convert_above_hd) {
+        uploadPolicyHint.textContent = `Videos acima de ${width}x${height} serao convertidos automaticamente para HD no upload.`;
+        return;
+      }
+
+      uploadPolicyHint.textContent = `Videos acima de ${width}x${height} nao devem ser enviados neste servidor, porque o ffmpeg nao esta disponivel para conversao automatica.`;
+    }
+
+    function updateActionStates() {
+      const hasDevice = !!state.selectedDevice;
+      const hasSelectedMedia = !!getSelectedMediaOption();
+
+      deviceFriendlyInput.disabled = !hasDevice;
+      saveDeviceBtn.disabled = !hasDevice;
+      deleteDeviceBtn.disabled = !hasDevice;
+      previewBtn.disabled = !hasDevice;
+
+      addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
+      viewMediaBtn.disabled = !hasSelectedMedia;
+      mediaRenameInput.disabled = !hasSelectedMedia;
+      renameMediaBtn.disabled = !hasSelectedMedia;
+      deleteMediaBtn.disabled = !hasSelectedMedia;
+    }
+
+    function fillMediaRenameInput() {
+      const media = getSelectedMedia();
+      mediaRenameInput.value = media ? media.name : "";
+    }
+
+    function appendMediaThumb(container, media, preferMetadata = false) {
+      container.innerHTML = "";
+      container.className = "media-thumb-box";
+
+      if (!media) {
+        const fallback = document.createElement("div");
+        fallback.className = "media-thumb-fallback";
+        fallback.textContent = "SEM MIDIA";
+        container.appendChild(fallback);
+        return;
+      }
+
+      if (media.type === "image") {
+        const img = document.createElement("img");
+        img.src = toAbsoluteUrl(media.url);
+        img.alt = media.name;
+        img.loading = "lazy";
+        container.appendChild(img);
+        return;
+      }
+
+      if (media.type === "video") {
+        const video = document.createElement("video");
+        video.src = toAbsoluteUrl(media.url);
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        if (!preferMetadata) {
+          video.controls = false;
+        }
+        video.addEventListener("loadeddata", () => {
+          try {
+            if (video.duration > 0.2) {
+              video.currentTime = 0.1;
+            }
+          } catch (e) {
+          }
+        }, { once: true });
+        container.appendChild(video);
+        return;
+      }
+
+      const fallback = document.createElement("div");
+      fallback.className = "media-thumb-fallback";
+      fallback.textContent = media.type.toUpperCase();
+      container.appendChild(fallback);
+    }
+
+    function renderSelectedMediaCard() {
+      const media = getSelectedMediaRecord();
+      if (!media) {
+        selectedMediaCard.className = "media-selected-card empty";
+        selectedMediaCard.textContent = "Selecione uma midia para ver a miniatura.";
+        return;
+      }
+
+      selectedMediaCard.className = "media-selected-card is-active";
+      selectedMediaCard.innerHTML = "";
+
+      const thumb = document.createElement("div");
+      appendMediaThumb(thumb, media, true);
+
+      const body = document.createElement("div");
+      body.className = "media-card-meta";
+
+      const title = document.createElement("strong");
+      title.textContent = media.name;
+
+      const details = document.createElement("div");
+      details.className = "small";
+      details.textContent = media.type === "video"
+        ? "Video pronto para visualizar ou adicionar na playlist."
+        : "Imagem pronta para visualizar ou adicionar na playlist.";
+
+      body.appendChild(title);
+      body.appendChild(details);
+      selectedMediaCard.appendChild(thumb);
+      selectedMediaCard.appendChild(body);
+    }
+
+    function selectMediaByName(name) {
+      const target = state.media.find((item) => item.name === name);
+      if (!target) return;
+
+      state.selectedMediaName = target.name;
+      mediaSelect.value = normalizeMediaPath(target.url);
+      fillMediaRenameInput();
+      updateDurationVisibility();
+      updateActionStates();
+      renderSelectedMediaCard();
+      renderMediaGallery();
+    }
+
+    function renderMediaGallery() {
+      mediaGallery.innerHTML = "";
+
+      if (!state.media.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "Nenhuma midia cadastrada.";
+        mediaGallery.appendChild(empty);
+        return;
+      }
+
+      state.media.forEach((media) => {
+        const card = document.createElement("article");
+        card.className = `media-card${state.selectedMediaName === media.name ? " is-active" : ""}`;
+
+        const thumb = document.createElement("div");
+        appendMediaThumb(thumb, media, false);
+
+        const body = document.createElement("div");
+        body.className = "media-card-meta";
+
+        const title = document.createElement("strong");
+        title.textContent = media.name;
+
+        const details = document.createElement("div");
+        details.className = "small";
+        details.textContent = media.type === "video"
+          ? "Video enviado"
+          : "Imagem enviada";
+
+        const actions = document.createElement("div");
+        actions.className = "media-card-actions";
+
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.textContent = "Selecionar";
+        selectBtn.onclick = () => selectMediaByName(media.name);
+
+        const viewBtn = document.createElement("button");
+        viewBtn.type = "button";
+        viewBtn.className = "btn-secondary";
+        viewBtn.textContent = "Visualizar";
+        viewBtn.onclick = () => openMediaPreview(media);
+
+        actions.appendChild(selectBtn);
+        actions.appendChild(viewBtn);
+        body.appendChild(title);
+        body.appendChild(details);
+        body.appendChild(actions);
+        card.appendChild(thumb);
+        card.appendChild(body);
+        mediaGallery.appendChild(card);
+      });
+    }
+
+    function openMediaPreview(media = getSelectedMediaRecord()) {
+      if (!media) {
+        setStatus("Selecione uma midia para visualizar.", true);
+        return;
+      }
+
+      mediaPreviewTitle.textContent = media.name;
+      mediaPreviewStage.innerHTML = "";
+
+      if (media.type === "image") {
+        const img = document.createElement("img");
+        img.src = toAbsoluteUrl(media.url);
+        img.alt = media.name;
+        mediaPreviewStage.appendChild(img);
+      } else if (media.type === "video") {
+        const video = document.createElement("video");
+        video.src = toAbsoluteUrl(media.url);
+        video.controls = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        mediaPreviewStage.appendChild(video);
+      } else {
+        const frame = document.createElement("iframe");
+        frame.src = media.url;
+        frame.style.width = "100%";
+        frame.style.height = "72vh";
+        frame.style.border = "0";
+        frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        mediaPreviewStage.appendChild(frame);
+      }
+
+      mediaPreviewModal.classList.remove("is-hidden");
+    }
+
+    function closeMediaPreview() {
+      mediaPreviewModal.classList.add("is-hidden");
+      mediaPreviewStage.innerHTML = "";
+    }
+
+    function renderSelectedDeviceDetails() {
+      const device = getDeviceRecord();
+      if (!device) {
+        deviceFriendlyInput.value = "";
+        deviceIdInput.value = "";
+        deviceEndpointInput.value = "";
+        updatePlaylistTitle();
+        updateActionStates();
+        return;
+      }
+
+      deviceFriendlyInput.value = device.friendly_name || device.id;
+      deviceIdInput.value = device.id;
+
+      const playerUrl = new URL("index.html", window.location.href);
+      playerUrl.searchParams.set("device", device.id);
+      deviceEndpointInput.value = playerUrl.toString();
+
+      updatePlaylistTitle();
+      updateActionStates();
+    }
+
+    function getDisplayName(url) {
+      const clean = String(url || "").split("?")[0];
+      const name = clean.split("/").pop() || clean;
+      try {
+        return decodeURIComponent(name);
+      } catch (e) {
+        return name;
+      }
+    }
+
+    function formatDuration(seconds) {
+      const total = Math.max(0, Math.floor(Number(seconds) || 0));
+      const mins = String(Math.floor(total / 60)).padStart(2, "0");
+      const secs = String(total % 60).padStart(2, "0");
+      return `${mins}:${secs}`;
+    }
+
+    function formatLastSeen(unix) {
+      const value = Number(unix || 0);
+      if (!value) return "Nunca";
+      return new Date(value * 1000).toLocaleString("pt-BR");
+    }
+
+    function probeVideoDuration(url) {
+      return new Promise((resolve) => {
+        const video = document.createElement("video");
+        let done = false;
+
+        const finish = (value) => {
+          if (done) return;
+          done = true;
+          video.removeAttribute("src");
+          video.load();
+          resolve(value);
+        };
+
+        video.preload = "metadata";
+        video.muted = true;
+        video.onloadedmetadata = () => finish(video.duration);
+        video.onerror = () => finish(0);
+        setTimeout(() => finish(0), 8000);
+        video.src = toAbsoluteUrl(url);
+      });
+    }
+
+    function inspectLocalVideoFile(file) {
+      return new Promise((resolve, reject) => {
+        const video = document.createElement("video");
+        const objectUrl = URL.createObjectURL(file);
+        let done = false;
+
+        const finish = (callback) => {
+          if (done) return;
+          done = true;
+          URL.revokeObjectURL(objectUrl);
+          callback();
+        };
+
+        video.preload = "metadata";
+        video.onloadedmetadata = () => finish(() => {
+          resolve({
+            width: Number(video.videoWidth || 0),
+            height: Number(video.videoHeight || 0)
+          });
+        });
+        video.onerror = () => finish(() => reject(new Error("Nao foi possivel ler a resolucao do video selecionado.")));
+        setTimeout(() => finish(() => reject(new Error("Tempo esgotado ao analisar o video selecionado."))), 10000);
+        video.src = objectUrl;
+      });
+    }
+
+    async function validateUploadCandidate(file) {
+      if (!file) {
+        return { metadata: null, willConvert: false };
+      }
+
+      const fileType = media_type_from_name(file.name);
+      if (fileType !== "video") {
+        return { metadata: null, willConvert: false };
+      }
+
+      const metadata = await inspectLocalVideoFile(file);
+      const maxWidth = Number(state.uploadCapabilities.video_max_width || 1920);
+      const maxHeight = Number(state.uploadCapabilities.video_max_height || 1080);
+      const exceedsHd = metadata.width > maxWidth || metadata.height > maxHeight;
+
+      if (!exceedsHd) {
+        return { metadata, willConvert: false };
+      }
+
+      if (state.uploadCapabilities.auto_convert_above_hd) {
+        return { metadata, willConvert: true };
+      }
+
+      throw new Error(`O video selecionado tem ${metadata.width}x${metadata.height}. Neste servidor ele precisa estar em no maximo ${maxWidth}x${maxHeight}, porque o ffmpeg nao esta disponivel para conversao automatica.`);
+    }
+
+    async function loadVideoDurations(media) {
+      const targets = (media || []).filter((item) => item.type === "video");
+      if (!targets.length) return;
+
+      await Promise.all(targets.map(async (item) => {
+        const key = normalizeMediaPath(item.url);
+        if (state.mediaDurations[key] > 0) return;
+        const seconds = await probeVideoDuration(key);
+        if (seconds > 0) {
+          state.mediaDurations[key] = seconds;
+        }
+      }));
+    }
+
+    function media_type_from_name(name) {
+      const cleanName = String(name || "").toLowerCase();
+      if (/\.(jpg|jpeg|png|gif|webp)$/.test(cleanName)) return "image";
+      if (/\.(mp4|webm|mov|m4v)$/.test(cleanName)) return "video";
+      return "";
+    }
+
+    function renderDeviceOptions() {
+      deviceSelect.innerHTML = "";
+
+      if (!state.devices.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Nenhuma TV encontrada";
+        deviceSelect.appendChild(option);
+        state.selectedDevice = "";
+        renderSelectedDeviceDetails();
+        return;
+      }
+
+      state.devices.forEach((device) => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.textContent = getDeviceLabel(device);
+        deviceSelect.appendChild(option);
+      });
+
+      const selectedExists = state.devices.some((device) => device.id === state.selectedDevice);
+      if (!selectedExists) {
+        state.selectedDevice = state.devices[0].id;
+      }
+
+      deviceSelect.value = state.selectedDevice;
+      renderSelectedDeviceDetails();
+    }
+
+    function renderMediaOptions() {
+      const currentSelection = state.selectedMediaName;
+      mediaSelect.innerHTML = "";
+
+      if (!state.media.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Sem midia em /midias";
+        mediaSelect.appendChild(option);
+        state.selectedMediaName = "";
+        fillMediaRenameInput();
+        updateDurationVisibility();
+        updateActionStates();
+        renderSelectedMediaCard();
+        renderMediaGallery();
+        return;
+      }
+
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Selecione uma midia...";
+      mediaSelect.appendChild(placeholder);
+
+      let hasSelectedOption = false;
+
+      state.media.forEach((item) => {
+        const option = document.createElement("option");
+        const normalizedUrl = normalizeMediaPath(item.url);
+        option.value = normalizedUrl;
+        option.dataset.type = item.type;
+        option.dataset.name = item.name;
+
+        if (item.type === "video") {
+          const duration = state.mediaDurations[normalizedUrl];
+          const durationLabel = duration > 0 ? formatDuration(duration) : "--:--";
+          option.textContent = `${item.name} (${item.type} | ${durationLabel})`;
+        } else {
+          option.textContent = `${item.name} (${item.type})`;
+        }
+
+        if (currentSelection && currentSelection === item.name) {
+          option.selected = true;
+          hasSelectedOption = true;
+        }
+
+        mediaSelect.appendChild(option);
+      });
+
+      if (!hasSelectedOption) {
+        mediaSelect.value = "";
+        state.selectedMediaName = "";
+      }
+
+      if (!state.selectedMediaName) {
+        fillMediaRenameInput();
+      }
+
+      updateDurationVisibility();
+      updateActionStates();
+      renderSelectedMediaCard();
+      renderMediaGallery();
+    }
+
+    function renderPlaylist() {
+      playlistContainer.innerHTML = "";
+
+      if (!state.selectedDevice) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "Crie ou selecione uma TV para editar a playlist.";
+        playlistContainer.appendChild(empty);
+        return;
+      }
+
+      if (!state.playlist.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "Sem itens na playlist desta TV.";
+        playlistContainer.appendChild(empty);
+        return;
+      }
+
+      state.playlist.forEach((item, index) => {
+        const card = document.createElement("article");
+        card.className = "playlist-item";
+        card.draggable = true;
+        card.dataset.index = String(index);
+        card.addEventListener("dragstart", onDragStart);
+        card.addEventListener("dragover", onDragOver);
+        card.addEventListener("drop", onDrop);
+        card.addEventListener("dragend", onDragEnd);
+
+        const durationText = item.type === "image"
+          ? `${item.duration || 10}s`
+          : (item.type === "embed" ? `${item.duration || 60}s` : "ate finalizar");
+
+        const head = document.createElement("div");
+        head.className = "playlist-head";
+
+        const dragHandle = document.createElement("span");
+        dragHandle.className = "drag-handle";
+        dragHandle.textContent = "::";
+
+        let preview;
+        if (item.type === "image") {
+          preview = document.createElement("img");
+          preview.src = toAbsoluteUrl(item.url);
+          preview.alt = "Miniatura";
+          preview.onerror = () => { preview.style.display = "none"; };
+        } else if (item.type === "video") {
+          preview = document.createElement("video");
+          preview.src = toAbsoluteUrl(item.url);
+          preview.muted = true;
+          preview.playsInline = true;
+          preview.preload = "metadata";
+          preview.addEventListener("loadeddata", () => {
+            try {
+              if (preview.duration > 0.2) {
+                preview.currentTime = 0.1;
+              }
+            } catch (e) {
+            }
+          }, { once: true });
+          preview.onerror = () => { preview.style.display = "none"; };
+        } else if (item.type === "youtube") {
+          preview = document.createElement("div");
+          preview.textContent = "YT";
+          preview.style.display = "flex";
+          preview.style.alignItems = "center";
+          preview.style.justifyContent = "center";
+          preview.style.fontSize = "0.75rem";
+          preview.style.fontWeight = "700";
+          preview.style.color = "#fff";
+          preview.style.background = "#c1121f";
+        } else {
+          preview = document.createElement("div");
+          preview.textContent = "LIVE";
+          preview.style.display = "flex";
+          preview.style.alignItems = "center";
+          preview.style.justifyContent = "center";
+          preview.style.fontSize = "0.75rem";
+          preview.style.fontWeight = "700";
+          preview.style.color = "#fff";
+          preview.style.background = "#d92d20";
+        }
+        preview.className = "playlist-thumb";
+
+        const meta = document.createElement("div");
+        meta.className = "playlist-meta";
+
+        const title = document.createElement("strong");
+        title.textContent = `${index + 1}. ${getDisplayName(item.url)}`;
+
+        const details = document.createElement("div");
+        details.className = "small";
+        details.textContent = `Tipo: ${item.type} | Duracao: ${durationText}`;
+
+        meta.appendChild(title);
+        meta.appendChild(details);
+
+        if (item.type === "image" || item.type === "embed") {
+          const durationRow = document.createElement("div");
+          durationRow.className = "small";
+          durationRow.style.marginTop = "6px";
+
+          const durationLabel = document.createElement("label");
+          durationLabel.textContent = item.type === "image"
+            ? "Ajustar duracao (segundos)"
+            : "Tempo de exibicao da live (segundos)";
+          durationLabel.style.marginBottom = "4px";
+          durationLabel.style.color = "#4d5672";
+
+          const durationEdit = document.createElement("input");
+          durationEdit.type = "number";
+          durationEdit.min = "1";
+          durationEdit.value = String(item.duration || (item.type === "image" ? 10 : 60));
+          durationEdit.style.maxWidth = "140px";
+          durationEdit.addEventListener("change", () => {
+            const value = Number(durationEdit.value || 0);
+            item.duration = value > 0 ? value : (item.type === "image" ? 10 : 60);
+            renderPlaylist();
+            scheduleAutoSave("Duracao atualizada e salva automaticamente.");
+          });
+
+          durationRow.appendChild(durationLabel);
+          durationRow.appendChild(durationEdit);
+          meta.appendChild(durationRow);
+        }
+
+        head.appendChild(dragHandle);
+        head.appendChild(preview);
+        head.appendChild(meta);
+        card.appendChild(head);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        actions.style.marginTop = "8px";
+
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "btn-danger";
+        removeBtn.textContent = "Remover";
+        removeBtn.onclick = () => {
+          state.playlist.splice(index, 1);
+          renderPlaylist();
+          scheduleAutoSave("Item removido e salvo automaticamente.");
+        };
+
+        actions.appendChild(removeBtn);
+        card.appendChild(actions);
+        playlistContainer.appendChild(card);
+      });
+    }
+
+    function moveItemByIndex(from, to) {
+      if (from < 0 || from >= state.playlist.length) return;
+      if (to < 0 || to >= state.playlist.length) return;
+      if (from === to) return;
+
+      const [item] = state.playlist.splice(from, 1);
+      state.playlist.splice(to, 0, item);
+      renderPlaylist();
+      scheduleAutoSave("Ordem atualizada e salva automaticamente.");
+    }
+
+    function onDragStart(event) {
+      const index = Number(event.currentTarget.dataset.index);
+      state.dragFromIndex = index;
+      event.currentTarget.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(index));
+    }
+
+    function onDragOver(event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    }
+
+    function onDrop(event) {
+      event.preventDefault();
+      const to = Number(event.currentTarget.dataset.index);
+      const from = state.dragFromIndex;
+      moveItemByIndex(from, to);
+    }
+
+    function onDragEnd(event) {
+      event.currentTarget.classList.remove("dragging");
+      state.dragFromIndex = -1;
+    }
+
+    async function loadDevices(preferredDevice = state.selectedDevice) {
+      const data = await apiGet({ action: "list_tvs" });
+      state.devices = Array.isArray(data.devices) ? data.devices : [];
+
+      if (preferredDevice && state.devices.some((device) => device.id === preferredDevice)) {
+        state.selectedDevice = preferredDevice;
+      } else if (!state.devices.some((device) => device.id === state.selectedDevice)) {
+        state.selectedDevice = state.devices.length ? state.devices[0].id : "";
+      }
+
+      renderDeviceOptions();
+    }
+
+    function renderDeviceStatus() {
+      if (!Array.isArray(state.deviceStatus) || !state.deviceStatus.length) {
+        tvStatusContainer.textContent = "Nenhuma TV encontrada.";
+        return;
+      }
+
+      const table = document.createElement("table");
+      table.className = "tv-status-table";
+
+      const thead = document.createElement("thead");
+      thead.innerHTML = "<tr><th>TV</th><th>Status</th><th>Ultima conexao</th></tr>";
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+
+      state.deviceStatus.forEach((row) => {
+        const tr = document.createElement("tr");
+
+        const deviceCell = document.createElement("td");
+        const name = document.createElement("div");
+        name.className = "tv-status-name";
+        name.textContent = row.friendly_name && row.friendly_name !== row.device ? row.friendly_name : row.device;
+        const code = document.createElement("div");
+        code.className = "tv-status-code";
+        code.textContent = row.device;
+        deviceCell.appendChild(name);
+        if (row.friendly_name && row.friendly_name !== row.device) {
+          deviceCell.appendChild(code);
+        }
+
+        const statusCell = document.createElement("td");
+        const dot = document.createElement("span");
+        dot.className = `tv-dot ${row.online ? "online" : "offline"}`;
+        const statusText = document.createTextNode(row.online ? "Online" : "Offline");
+        statusCell.appendChild(dot);
+        statusCell.appendChild(statusText);
+
+        const lastSeenCell = document.createElement("td");
+        lastSeenCell.textContent = formatLastSeen(row.last_seen_unix);
+
+        tr.appendChild(deviceCell);
+        tr.appendChild(statusCell);
+        tr.appendChild(lastSeenCell);
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      tvStatusContainer.innerHTML = "";
+      tvStatusContainer.appendChild(table);
+    }
+
+    async function loadDeviceStatus() {
+      const data = await apiGet({ action: "list_device_status", online_window: 600 });
+      state.deviceStatus = Array.isArray(data.devices) ? data.devices : [];
+      renderDeviceStatus();
+    }
+
+    async function loadMedia(preferredMediaName = state.selectedMediaName) {
+      const data = await apiGet({ action: "list_media" });
+      state.media = Array.isArray(data.media) ? data.media : [];
+      if (data.capabilities && typeof data.capabilities === "object") {
+        state.uploadCapabilities = {
+          ...state.uploadCapabilities,
+          ...data.capabilities
+        };
+      }
+      renderUploadPolicyHint();
+
+      if (preferredMediaName && state.media.some((item) => item.name === preferredMediaName)) {
+        state.selectedMediaName = preferredMediaName;
+      } else if (!state.media.some((item) => item.name === state.selectedMediaName)) {
+        state.selectedMediaName = "";
+      }
+
+      renderMediaOptions();
+      await loadVideoDurations(state.media);
+      renderMediaOptions();
+    }
+
+    async function loadPlaylist(device) {
+      if (!device) {
+        state.selectedDevice = "";
+        state.playlist = [];
+        renderDeviceOptions();
+        renderPlaylist();
+        setStatus("");
+        return;
+      }
+
+      const data = await apiGet({ action: "get_playlist", device });
+      state.selectedDevice = device;
+      state.playlist = Array.isArray(data.playlist)
+        ? data.playlist.map((item) => {
+            const rawType = item && item.type ? String(item.type) : "";
+            const type = ["image", "video", "embed", "youtube"].includes(rawType) ? rawType : "video";
+            const url = (type === "embed" || type === "youtube")
+              ? normalizeEmbedUrl(item ? item.url : "")
+              : normalizeMediaPath(item ? item.url : "");
+            const normalized = { type, url };
+
+            if (type === "image") {
+              const duration = Number(item && item.duration ? item.duration : 10);
+              normalized.duration = duration > 0 ? duration : 10;
+            } else if (type === "embed") {
+              const duration = Number(item && item.duration ? item.duration : 60);
+              normalized.duration = duration > 0 ? duration : 60;
+            }
+
+            return normalized;
+          }).filter((item) => !!item.url)
+        : [];
+
+      renderDeviceOptions();
+      renderPlaylist();
+      setStatus(`Playlist carregada para ${getDeviceLabel(getDeviceRecord(device)) || device}.`);
+    }
+
+    function addSelectedMedia() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione ou crie uma TV antes de montar a playlist.", true);
+        return;
+      }
+
+      const media = getSelectedMedia();
+      if (!media) {
+        setStatus("Selecione uma midia para adicionar.", true);
+        return;
+      }
+
+      const item = { type: media.type, url: media.url };
+      if (media.type === "image") {
+        const durationValue = Number(durationInput.value || 0);
+        item.duration = durationValue > 0 ? durationValue : 10;
+      }
+
+      state.playlist.push(item);
+      renderPlaylist();
+      scheduleAutoSave("Item adicionado e salvo automaticamente.");
+    }
+
+    function addYoutubeVideo() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione ou crie uma TV antes de montar a playlist.", true);
+        return;
+      }
+
+      const rawUrl = youtubeUrlInput.value.trim();
+      const embedUrl = normalizeEmbedUrl(rawUrl);
+      if (!embedUrl) {
+        setStatus("URL do YouTube invalida.", true);
+        return;
+      }
+
+      state.playlist.push({
+        type: "youtube",
+        url: embedUrl
+      });
+
+      youtubeUrlInput.value = "";
+      renderPlaylist();
+      scheduleAutoSave("Video do YouTube adicionado e salvo automaticamente.");
+    }
+
+    function addLiveEmbed() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione ou crie uma TV antes de montar a playlist.", true);
+        return;
+      }
+
+      const rawUrl = liveEmbedInput.value.trim();
+      const embedUrl = normalizeEmbedUrl(rawUrl);
+      if (!embedUrl || !/\/embed\//.test(embedUrl)) {
+        setStatus("Informe uma URL embed valida para live.", true);
+        return;
+      }
+
+      const durationValue = Number(durationInput.value || 0);
+      state.playlist.push({
+        type: "embed",
+        url: embedUrl,
+        duration: durationValue >= 15 ? durationValue : 60
+      });
+
+      liveEmbedInput.value = "";
+      renderPlaylist();
+      scheduleAutoSave("Live embed adicionada e salva automaticamente.");
+    }
+
+    async function uploadMedia() {
+      if (!uploadInput.files || !uploadInput.files.length) return;
+
+      try {
+        setUploadLoading(true);
+        const file = uploadInput.files[0];
+        const analysis = await validateUploadCandidate(file);
+        const formData = new FormData();
+        formData.append("media_file", file);
+        const result = await apiPostForm("upload_media", formData);
+        uploadInput.value = "";
+
+        if (result.capabilities && typeof result.capabilities === "object") {
+          state.uploadCapabilities = {
+            ...state.uploadCapabilities,
+            ...result.capabilities
+          };
+          renderUploadPolicyHint();
+        }
+
+        state.selectedMediaName = result.name;
+        await loadMedia(result.name);
+        fillMediaRenameInput();
+
+        const videoMeta = analysis && analysis.metadata
+          ? ` (${analysis.metadata.width}x${analysis.metadata.height})`
+          : "";
+        const conversionNote = result.converted_to_hd
+          ? " O video foi convertido automaticamente para HD."
+          : (analysis && analysis.willConvert ? " O video sera ajustado para HD no servidor." : "");
+
+        setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote}`.trim());
+      } finally {
+        setUploadLoading(false);
+      }
+    }
+
+    async function savePlaylistAuto(statusMessage) {
+      if (!state.selectedDevice || state.isSaving) return;
+      state.isSaving = true;
+
+      try {
+        await apiPost("save_playlist", {
+          device: state.selectedDevice,
+          playlist: state.playlist
+        });
+        setStatus(statusMessage || `Playlist de ${state.selectedDevice} salva automaticamente.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        state.isSaving = false;
+      }
+    }
+
+    function scheduleAutoSave(statusMessage) {
+      if (state.saveTimer) clearTimeout(state.saveTimer);
+      state.saveTimer = setTimeout(() => savePlaylistAuto(statusMessage), 350);
+    }
+
+    function openPreview() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione uma TV para visualizar.", true);
+        return;
+      }
+
+      const previewUrl = new URL("index.html", window.location.href);
+      previewUrl.searchParams.set("device", state.selectedDevice);
+      window.open(previewUrl.toString(), "_blank", "noopener");
+    }
+
+    async function createDeviceFromInput() {
+      try {
+        const friendlyName = newDeviceFriendlyInput.value.trim();
+        const result = await apiPost("create_device", { friendly_name: friendlyName });
+        newDeviceFriendlyInput.value = "";
+
+        await loadDevices(result.device.id);
+        await loadPlaylist(result.device.id);
+        await loadDeviceStatus();
+
+        setStatus(`TV ${result.device.id} criada com sucesso.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function saveSelectedDeviceName() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione uma TV para editar.", true);
+        return;
+      }
+
+      try {
+        const friendlyName = deviceFriendlyInput.value.trim();
+        await apiPost("update_device", {
+          device: state.selectedDevice,
+          friendly_name: friendlyName
+        });
+
+        await loadDevices(state.selectedDevice);
+        await loadDeviceStatus();
+        renderSelectedDeviceDetails();
+
+        setStatus(`Nome amigavel de ${state.selectedDevice} atualizado.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function deleteSelectedDevice() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione uma TV para remover.", true);
+        return;
+      }
+
+      const device = getDeviceRecord();
+      const label = getDeviceLabel(device) || state.selectedDevice;
+      if (!window.confirm(`Remover a TV ${label}? A playlist e o status desta TV serao excluidos.`)) {
+        return;
+      }
+
+      try {
+        const removedDevice = state.selectedDevice;
+        await apiPost("delete_device", { device: removedDevice });
+
+        await loadDevices();
+        await loadDeviceStatus();
+
+        if (state.selectedDevice) {
+          await loadPlaylist(state.selectedDevice);
+          setStatus(`TV ${removedDevice} removida com sucesso.`);
+        } else {
+          state.playlist = [];
+          renderDeviceOptions();
+          renderPlaylist();
+          setStatus(`TV ${removedDevice} removida com sucesso.`);
+        }
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function renameSelectedMedia() {
+      const media = getSelectedMedia();
+      if (!media) {
+        setStatus("Selecione uma midia para renomear.", true);
+        return;
+      }
+
+      const newName = mediaRenameInput.value.trim();
+      if (!newName) {
+        setStatus("Informe o novo nome da midia.", true);
+        return;
+      }
+
+      try {
+        const result = await apiPost("rename_media", {
+          old_name: media.name,
+          new_name: newName
+        });
+
+        state.selectedMediaName = result.name;
+        await loadMedia(result.name);
+        fillMediaRenameInput();
+
+        if (state.selectedDevice) {
+          await loadPlaylist(state.selectedDevice);
+        } else {
+          renderPlaylist();
+        }
+
+        setStatus(`Midia renomeada para ${result.name}.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function deleteSelectedMedia() {
+      const media = getSelectedMedia();
+      if (!media) {
+        setStatus("Selecione uma midia para excluir.", true);
+        return;
+      }
+
+      if (!window.confirm(`Excluir a midia ${media.name}? Ela sera removida das playlists onde estiver.`)) {
+        return;
+      }
+
+      try {
+        const deletedName = media.name;
+        await apiPost("delete_media", { name: deletedName });
+
+        state.selectedMediaName = "";
+        await loadMedia();
+
+        if (state.selectedDevice) {
+          await loadPlaylist(state.selectedDevice);
+        } else {
+          renderPlaylist();
+        }
+
+        setStatus(`Midia ${deletedName} excluida com sucesso.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function installPwa() {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      try {
+        await deferredInstallPrompt.userChoice;
+      } catch (e) {
+      }
+      deferredInstallPrompt = null;
+      installBtn.classList.add("is-hidden");
+    }
+
+    function registerPwa() {
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(buildTag)}`).catch(() => {});
+        });
+      }
+
+      window.addEventListener("beforeinstallprompt", (event) => {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        installBtn.classList.remove("is-hidden");
+      });
+
+      window.addEventListener("appinstalled", () => {
+        deferredInstallPrompt = null;
+        installBtn.classList.add("is-hidden");
+        setStatus("App instalado com sucesso.");
+      });
+    }
+
+    function handleMediaSelectionChange() {
+      const media = getSelectedMedia();
+      state.selectedMediaName = media ? media.name : "";
+      fillMediaRenameInput();
+      updateDurationVisibility();
+      updateActionStates();
+      renderSelectedMediaCard();
+      renderMediaGallery();
+    }
+
+    deviceSelect.addEventListener("change", async () => {
+      const device = deviceSelect.value;
+      try {
+        await loadPlaylist(device);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    mediaSelect.addEventListener("change", handleMediaSelectionChange);
+
+    uploadInput.addEventListener("change", async () => {
+      try {
+        await uploadMedia();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    document.getElementById("createDeviceBtn").addEventListener("click", createDeviceFromInput);
+    document.getElementById("addYoutubeBtn").addEventListener("click", addYoutubeVideo);
+    document.getElementById("addLiveEmbedBtn").addEventListener("click", addLiveEmbed);
+    addMediaBtn.addEventListener("click", addSelectedMedia);
+    viewMediaBtn.addEventListener("click", () => openMediaPreview());
+    renameMediaBtn.addEventListener("click", renameSelectedMedia);
+    deleteMediaBtn.addEventListener("click", deleteSelectedMedia);
+    saveDeviceBtn.addEventListener("click", saveSelectedDeviceName);
+    deleteDeviceBtn.addEventListener("click", deleteSelectedDevice);
+    previewBtn.addEventListener("click", openPreview);
+    installBtn.addEventListener("click", installPwa);
+    closeMediaPreviewBtn.addEventListener("click", closeMediaPreview);
+
+    mediaRenameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        renameSelectedMedia();
+      }
+    });
+
+    deviceFriendlyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        saveSelectedDeviceName();
+      }
+    });
+
+    newDeviceFriendlyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        createDeviceFromInput();
+      }
+    });
+
+    deviceEndpointInput.addEventListener("focus", () => deviceEndpointInput.select());
+    mediaPreviewModal.addEventListener("click", (event) => {
+      if (event.target === mediaPreviewModal) {
+        closeMediaPreview();
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !mediaPreviewModal.classList.contains("is-hidden")) {
+        closeMediaPreview();
+      }
+    });
+
+    (async function init() {
+      try {
+        registerPwa();
+        renderUploadPolicyHint();
+        await loadDevices();
+        await loadDeviceStatus();
+        let mediaLoadError = "";
+        try {
+          await loadMedia();
+        } catch (error) {
+          mediaLoadError = error.message;
+          state.media = [];
+          state.selectedMediaName = "";
+          renderMediaOptions();
+        }
+
+        if (state.selectedDevice) {
+          await loadPlaylist(state.selectedDevice);
+        } else {
+          renderDeviceOptions();
+          renderPlaylist();
+        }
+
+        if (mediaLoadError) {
+          setStatus(`A playlist carregou, mas a lista de midias falhou: ${mediaLoadError}`, true);
+        }
+
+        setInterval(() => {
+          loadDeviceStatus().catch(() => {});
+        }, 30000);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    })();
+  </script>
+</body>
+</html>
