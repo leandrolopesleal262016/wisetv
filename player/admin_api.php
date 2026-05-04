@@ -376,6 +376,60 @@ function write_device_status($device, $meta)
     return file_put_contents($path, $json . PHP_EOL) !== false;
 }
 
+function generate_playlist_version()
+{
+    return str_replace('.', '', sprintf('%.6F', microtime(true)));
+}
+
+function extract_playlist_version($payload)
+{
+    if (
+        is_array($payload) &&
+        isset($payload['_meta']) &&
+        is_array($payload['_meta']) &&
+        isset($payload['_meta']['playlist_version'])
+    ) {
+        $version = trim((string)$payload['_meta']['playlist_version']);
+        if ($version !== '') {
+            return $version;
+        }
+    }
+
+    return '';
+}
+
+function playlist_path_for_device($device)
+{
+    return PLAYLISTS_DIR . '/' . $device . '.json';
+}
+
+function playlist_version_for_device($device, $payload = null)
+{
+    $version = extract_playlist_version($payload);
+    if ($version !== '') {
+        return $version;
+    }
+
+    $path = playlist_path_for_device($device);
+    if (!file_exists($path)) {
+        return '';
+    }
+
+    $modified = (int)@filemtime($path);
+    return $modified > 0 ? (string)$modified : '';
+}
+
+function build_playlist_payload($playlistItems, $version = null)
+{
+    return array(
+        'playlist' => array_values(is_array($playlistItems) ? $playlistItems : array()),
+        '_meta' => array(
+            'playlist_version' => $version !== null && $version !== '' ? (string)$version : generate_playlist_version(),
+            'updated_at' => gmdate('c')
+        )
+    );
+}
+
 function read_device_status($device)
 {
     $path = get_status_storage_dir() . '/' . $device . '.json';
@@ -549,12 +603,12 @@ function next_device_id($ids)
 
 function ensure_playlist_file($device)
 {
-    $path = PLAYLISTS_DIR . '/' . $device . '.json';
+    $path = playlist_path_for_device($device);
     if (file_exists($path)) {
         return true;
     }
 
-    return save_json_file($path, array('playlist' => array()));
+    return save_json_file($path, build_playlist_payload(array()));
 }
 
 function media_url_for_name($name)
@@ -651,7 +705,7 @@ function update_playlists_for_media($oldFilename, $newFilename)
             continue;
         }
 
-        $payload['playlist'] = $newPlaylist;
+        $payload = build_playlist_payload($newPlaylist);
         if (!save_json_file($path, $payload)) {
             json_error('Falha ao atualizar playlists apos alterar midia', 500);
         }
@@ -743,7 +797,16 @@ if (($method === 'GET' || $method === 'POST') && $action === 'heartbeat') {
         json_error('Falha ao salvar status', 500);
     }
 
-    json_ok(array('ok' => true, 'device' => $device, 'last_seen_unix' => $now));
+    $clientPlaylistVersion = trim((string)(isset($_REQUEST['playlist_version']) ? $_REQUEST['playlist_version'] : ''));
+    $serverPlaylistVersion = playlist_version_for_device($device);
+
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'last_seen_unix' => $now,
+        'playlist_version' => $serverPlaylistVersion,
+        'playlist_changed' => $serverPlaylistVersion !== '' && $serverPlaylistVersion !== $clientPlaylistVersion
+    ));
 }
 
 if ($method === 'GET' && $action === 'list_device_status') {
@@ -790,9 +853,14 @@ if ($method === 'GET' && $action === 'get_playlist') {
         json_error('Device invalido', 400);
     }
 
-    $path = PLAYLISTS_DIR . '/' . $device . '.json';
+    $path = playlist_path_for_device($device);
     if (!file_exists($path)) {
-        json_ok(array('ok' => true, 'device' => $device, 'playlist' => array()));
+        json_ok(array(
+            'ok' => true,
+            'device' => $device,
+            'playlist' => array(),
+            'playlist_version' => ''
+        ));
     }
 
     $contents = file_get_contents($path);
@@ -805,7 +873,12 @@ if ($method === 'GET' && $action === 'get_playlist') {
         json_error('Playlist invalida no arquivo', 500);
     }
 
-    json_ok(array('ok' => true, 'device' => $device, 'playlist' => $decoded['playlist']));
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'playlist' => $decoded['playlist'],
+        'playlist_version' => playlist_version_for_device($device, $decoded)
+    ));
 }
 
 if ($method === 'POST' && $action === 'save_playlist') {
@@ -843,12 +916,18 @@ if ($method === 'POST' && $action === 'save_playlist') {
         $normalized[] = $entry;
     }
 
-    $path = PLAYLISTS_DIR . '/' . $device . '.json';
-    if (!save_json_file($path, array('playlist' => $normalized))) {
+    $version = generate_playlist_version();
+    $path = playlist_path_for_device($device);
+    if (!save_json_file($path, build_playlist_payload($normalized, $version))) {
         json_error('Nao foi possivel salvar arquivo', 500);
     }
 
-    json_ok(array('ok' => true, 'device' => $device, 'count' => count($normalized)));
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'count' => count($normalized),
+        'playlist_version' => $version
+    ));
 }
 
 if ($method === 'POST' && $action === 'create_device') {

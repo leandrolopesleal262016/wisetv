@@ -23,6 +23,23 @@ function json_encode_payload($payload)
   return json_encode($payload, json_flags());
 }
 
+function extract_playlist_version($payload)
+{
+  if (
+    is_array($payload) &&
+    isset($payload['_meta']) &&
+    is_array($payload['_meta']) &&
+    isset($payload['_meta']['playlist_version'])
+  ) {
+    $version = trim((string)$payload['_meta']['playlist_version']);
+    if ($version !== '') {
+      return $version;
+    }
+  }
+
+  return '';
+}
+
 function media_base_url()
 {
   $scriptName = isset($_SERVER['SCRIPT_NAME']) ? (string)$_SERVER['SCRIPT_NAME'] : '/player/playlist.php';
@@ -64,7 +81,7 @@ function normalize_playlist_media_url($url)
 function normalize_playlist_payload($payload)
 {
   if (!is_array($payload) || !isset($payload['playlist']) || !is_array($payload['playlist'])) {
-    return array('playlist' => array());
+    return array('playlist' => array(), 'playlist_version' => '');
   }
 
   $normalized = array();
@@ -79,6 +96,8 @@ function normalize_playlist_payload($payload)
   }
 
   $payload['playlist'] = $normalized;
+  $payload['playlist_version'] = extract_playlist_version($payload);
+  unset($payload['_meta']);
   return $payload;
 }
 
@@ -129,5 +148,12 @@ if ($rawPlaylist === false) {
 }
 
 $decoded = json_decode($rawPlaylist, true);
-$encodedPlaylist = json_encode_payload(normalize_playlist_payload($decoded));
+$normalizedPayload = normalize_playlist_payload($decoded);
+if ($normalizedPayload['playlist_version'] === '') {
+  $modified = (int)@filemtime($path);
+  if ($modified > 0) {
+    $normalizedPayload['playlist_version'] = (string)$modified;
+  }
+}
+$encodedPlaylist = json_encode_payload($normalizedPayload);
 echo $encodedPlaylist !== false ? $encodedPlaylist : '{"playlist":[]}';

@@ -1685,7 +1685,7 @@
           device: state.selectedDevice,
           playlist: state.playlist
         });
-        setStatus(statusMessage || `Playlist de ${state.selectedDevice} salva automaticamente.`);
+        setStatus(statusMessage || `Playlist de ${state.selectedDevice} salva automaticamente. TVs atualizam em ate 15 segundos.`);
       } catch (error) {
         setStatus(error.message, true);
       } finally {

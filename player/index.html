@@ -43,6 +43,7 @@
     const mediaCacheName = "wisetv-player-media-v3";
     const playlistStorageKey = `wisetv-player-playlist-${device}`;
     const maxPrefetchItems = 3;
+    const heartbeatIntervalMs = 15000;
 
     const img = document.getElementById("img");
     const vid = document.getElementById("vid");
@@ -60,6 +61,11 @@
     let ytPlayer = null;
     let pendingYoutubeId = "";
     let playbackWatchdog = null;
+    let playlistRetryTimer = null;
+    let currentPlaylistVersion = "";
+    let playlistLoadInFlight = false;
+    let pendingPlaylistReload = false;
+    let heartbeatInFlight = false;
     function setStatus(state, label) {
       if (!state) return;
       if (state !== lastState) {
@@ -288,9 +294,12 @@
       }
     }
 
-    function savePlaylistSnapshot(playlistItems) {
+    function savePlaylistSnapshot(playlistItems, playlistVersion) {
       try {
-        localStorage.setItem(playlistStorageKey, JSON.stringify({ playlist: playlistItems }));
+        localStorage.setItem(playlistStorageKey, JSON.stringify({
+          playlist: playlistItems,
+          playlist_version: playlistVersion || ""
+        }));
       } catch (e) {
       }
     }
@@ -298,11 +307,14 @@
     function loadPlaylistSnapshot() {
       try {
         const raw = localStorage.getItem(playlistStorageKey);
-        if (!raw) return [];
+        if (!raw) return { playlist: [], playlistVersion: "" };
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed.playlist) ? parsed.playlist : [];
+        return {
+          playlist: Array.isArray(parsed.playlist) ? parsed.playlist : [],
+          playlistVersion: String(parsed.playlist_version || "").trim()
+        };
       } catch (e) {
-        return [];
+        return { playlist: [], playlistVersion: "" };
       }
     }
 
@@ -313,10 +325,26 @@
       next();
     }
 
+    function restartPlayback() {
+      if (!items.length) {
+        stopAll();
+        show("image");
+        img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+        started = false;
+        return;
+      }
+      idx = 0;
+      started = true;
+      next();
+    }
+
     function heartbeatRequestUrl() {
       const url = new URL("admin_api.php", window.location.href);
       url.searchParams.set("action", "heartbeat");
       url.searchParams.set("device", device);
+      if (currentPlaylistVersion) {
+        url.searchParams.set("playlist_version", currentPlaylistVersion);
+      }
       url.searchParams.set("t", String(Date.now()));
       return url.toString();
     }
@@ -430,7 +458,15 @@
       }
     }
 
-    async function loadPlaylist() {
+    async function loadPlaylist(options = {}) {
+      const shouldRestart = !!options.restart;
+      const isRetry = !!options.isRetry;
+      if (playlistLoadInFlight) {
+        pendingPlaylistReload = pendingPlaylistReload || shouldRestart;
+        return;
+      }
+
+      playlistLoadInFlight = true;
       try {
         const res = await fetch(playlistRequestUrl(), { cache: "no-store" });
         if (!res.ok) {
@@ -438,6 +474,7 @@
         }
         const data = await res.json();
         const newItems = Array.isArray(data.playlist) ? data.playlist : [];
+        const nextPlaylistVersion = String(data.playlist_version || "").trim();
         const normalizedItems = newItems.map((item) => {
           const normalized = Object.assign({}, item);
           normalized.type = normalized.type || "video";
@@ -451,30 +488,37 @@
           return normalized;
         }).filter((item) => !!item.url);
 
+        currentPlaylistVersion = nextPlaylistVersion;
+        if (playlistRetryTimer) {
+          clearTimeout(playlistRetryTimer);
+          playlistRetryTimer = null;
+        }
+
         if (!normalizedItems.length) {
-          const snapshotItems = loadPlaylistSnapshot();
-          if (snapshotItems.length) {
-            items = snapshotItems;
-            setStatus("cache", "Cache local");
-            startPlaybackIfNeeded();
-            return;
-          }
-          if (items.length) {
-            setStatus("cache", "Cache local");
-            return;
-          }
+          items = [];
+          savePlaylistSnapshot([], currentPlaylistVersion);
+          restartPlayback();
+          setStatus("online", "Playlist vazia");
+          return;
         }
 
         items = normalizedItems;
-        savePlaylistSnapshot(items);
+        savePlaylistSnapshot(items, currentPlaylistVersion);
         prefetchMedia(items);
         setStatus("online", "Online");
-        sendHeartbeat();
-        startPlaybackIfNeeded();
+
+        if (shouldRestart) {
+          restartPlayback();
+        } else {
+          startPlaybackIfNeeded();
+        }
       } catch (e) {
-        const snapshotItems = loadPlaylistSnapshot();
-        if (!items.length && snapshotItems.length) {
-          items = snapshotItems;
+        const snapshot = loadPlaylistSnapshot();
+        if (!items.length && snapshot.playlist.length) {
+          items = snapshot.playlist;
+          if (!currentPlaylistVersion && snapshot.playlistVersion) {
+            currentPlaylistVersion = snapshot.playlistVersion;
+          }
           setStatus("cache", "Cache local");
           startPlaybackIfNeeded();
         } else if (!items.length) {
@@ -485,18 +529,54 @@
         } else {
           setStatus("cache", "Cache local");
         }
-        timer = setTimeout(loadPlaylist, 15000);
+        if (!isRetry && !playlistRetryTimer) {
+          playlistRetryTimer = setTimeout(() => {
+            playlistRetryTimer = null;
+            loadPlaylist({ isRetry: true });
+          }, 15000);
+        }
+      } finally {
+        playlistLoadInFlight = false;
+        if (pendingPlaylistReload) {
+          const restartPending = pendingPlaylistReload;
+          pendingPlaylistReload = false;
+          loadPlaylist({ restart: restartPending });
+        }
       }
     }
 
-    function sendHeartbeat() {
-      fetch(heartbeatRequestUrl(), { method: "GET", cache: "no-store" }).catch(() => {});
+    async function sendHeartbeat() {
+      if (heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      try {
+        const res = await fetch(heartbeatRequestUrl(), { method: "GET", cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`Heartbeat HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (!data || data.ok !== true) {
+          throw new Error("Heartbeat invalido");
+        }
+
+        const serverPlaylistVersion = String(data.playlist_version || "").trim();
+        if (!currentPlaylistVersion && serverPlaylistVersion) {
+          currentPlaylistVersion = serverPlaylistVersion;
+        }
+
+        if (data.playlist_changed === true) {
+          await loadPlaylist({ restart: true });
+        }
+      } catch (e) {
+      } finally {
+        heartbeatInFlight = false;
+      }
     }
 
-    setInterval(loadPlaylist, 300000);
-    setInterval(sendHeartbeat, 45000);
-    sendHeartbeat();
-    registerPlayerSw().finally(loadPlaylist);
+    setInterval(sendHeartbeat, heartbeatIntervalMs);
+    registerPlayerSw().finally(async () => {
+      await loadPlaylist();
+      await sendHeartbeat();
+    });
   </script>
 </body>
 </html>
