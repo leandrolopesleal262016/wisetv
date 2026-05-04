@@ -1,5 +1,5 @@
-const STATIC_CACHE = "wisetv-player-static-v2";
-const MEDIA_CACHE = "wisetv-player-media-v2";
+const STATIC_CACHE = "wisetv-player-static-v3";
+const MEDIA_CACHE = "wisetv-player-media-v3";
 const STATIC_FILES = [
   "./index.html"
 ];
@@ -92,6 +92,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(event.request)
         .then(async (response) => {
+          if (!response || !response.ok) {
+            const cache = await caches.open(STATIC_CACHE);
+            const key = canonicalPlaylistRequest(url);
+            const cached = await cache.match(key);
+            if (cached) return cached;
+            return response;
+          }
           const cache = await caches.open(STATIC_CACHE);
           const key = canonicalPlaylistRequest(url);
           cache.put(key, response.clone());
@@ -123,9 +130,16 @@ self.addEventListener("fetch", (event) => {
           const network = await fetch(event.request);
           if (network && network.status === 200) {
             cache.put(event.request, network.clone());
+            return network;
+          }
+          if (cached) {
+            return cachedRangeResponse(event.request, cached);
           }
           return network;
         } catch (e) {
+          if (cached) {
+            return cachedRangeResponse(event.request, cached);
+          }
           return new Response("offline", { status: 503, statusText: "Offline" });
         }
       })

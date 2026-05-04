@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="wisetv-build" content="2026-03-25-hostinger-fix-1" />
+  <meta name="wisetv-build" content="2026-05-04-player-resilience-1" />
   <title>Wise360 Player</title>
   <style>
     html, body { margin:0; height:100%; background:#000; overflow:hidden; }
@@ -34,13 +34,15 @@
   <div id="status" title="Inicializando"></div>
 
   <script>
-    const buildTag = "2026-03-25-hostinger-fix-1";
+    const buildTag = "2026-05-04-player-resilience-1";
     const params = new URLSearchParams(location.search);
     const device = params.get("device") || "tv01";
     const playlistBase = new URL("playlist.php", window.location.href);
     const appBase = new URL("../", window.location.href);
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
-    const mediaCacheName = "wisetv-player-media-v2";
+    const mediaCacheName = "wisetv-player-media-v3";
+    const playlistStorageKey = `wisetv-player-playlist-${device}`;
+    const maxPrefetchItems = 3;
 
     const img = document.getElementById("img");
     const vid = document.getElementById("vid");
@@ -57,6 +59,7 @@
     let ytApiReady = false;
     let ytPlayer = null;
     let pendingYoutubeId = "";
+    let playbackWatchdog = null;
     function setStatus(state, label) {
       if (!state) return;
       if (state !== lastState) {
@@ -76,8 +79,15 @@
 
     function stopAll() {
       if (timer) { clearTimeout(timer); timer = null; }
+      if (playbackWatchdog) { clearTimeout(playbackWatchdog); playbackWatchdog = null; }
       vid.pause();
       vid.onended = null;
+      vid.onerror = null;
+      vid.onstalled = null;
+      vid.onabort = null;
+      vid.onwaiting = null;
+      vid.oncanplay = null;
+      vid.onloadeddata = null;
       vid.removeAttribute("src");
       vid.load();
       emb.removeAttribute("src");
@@ -258,6 +268,51 @@
       return url.toString();
     }
 
+    function scheduleNext(delayMs = 500) {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(next, delayMs);
+    }
+
+    function schedulePlaybackWatchdog(label, delayMs = 15000) {
+      if (playbackWatchdog) clearTimeout(playbackWatchdog);
+      playbackWatchdog = setTimeout(() => {
+        setStatus("cache", label || "Falha ao reproduzir");
+        next();
+      }, delayMs);
+    }
+
+    function clearPlaybackWatchdog() {
+      if (playbackWatchdog) {
+        clearTimeout(playbackWatchdog);
+        playbackWatchdog = null;
+      }
+    }
+
+    function savePlaylistSnapshot(playlistItems) {
+      try {
+        localStorage.setItem(playlistStorageKey, JSON.stringify({ playlist: playlistItems }));
+      } catch (e) {
+      }
+    }
+
+    function loadPlaylistSnapshot() {
+      try {
+        const raw = localStorage.getItem(playlistStorageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed.playlist) ? parsed.playlist : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function startPlaybackIfNeeded() {
+      if (started || !items.length) return;
+      idx = 0;
+      started = true;
+      next();
+    }
+
     function heartbeatRequestUrl() {
       const url = new URL("admin_api.php", window.location.href);
       url.searchParams.set("action", "heartbeat");
@@ -277,7 +332,7 @@
         show("image");
         img.onerror = () => {
           img.onerror = null;
-          timer = setTimeout(next, 500);
+          scheduleNext();
         };
         img.src = item.url;
         timer = setTimeout(next, (item.duration || 10) * 1000);
@@ -286,13 +341,23 @@
 
       if (item.type === "video") {
         show("video");
+        vid.preload = "auto";
+        vid.onerror = () => scheduleNext();
+        vid.onstalled = () => scheduleNext(1000);
+        vid.onabort = () => scheduleNext();
+        vid.onwaiting = () => schedulePlaybackWatchdog("Video sem resposta", 20000);
+        vid.oncanplay = clearPlaybackWatchdog;
+        vid.onloadeddata = clearPlaybackWatchdog;
         vid.src = item.url;
         vid.loop = false;
         vid.autoplay = true;
         vid.muted = false;
+        schedulePlaybackWatchdog("Falha ao iniciar video");
         vid.play().catch(() => {
           vid.muted = true;
-          return vid.play().catch(() => {});
+          return vid.play().catch(() => {
+            scheduleNext();
+          });
         });
 
         if (item.duration && item.duration > 0) {
@@ -337,7 +402,7 @@
             .map((item) => item.url)
             .filter(Boolean)
         )
-      );
+      ).slice(0, maxPrefetchItems);
       if (!unique.length) return;
 
       const cache = await caches.open(mediaCacheName);
@@ -368,6 +433,9 @@
     async function loadPlaylist() {
       try {
         const res = await fetch(playlistRequestUrl(), { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`Playlist HTTP ${res.status}`);
+        }
         const data = await res.json();
         const newItems = Array.isArray(data.playlist) ? data.playlist : [];
         const normalizedItems = newItems.map((item) => {
@@ -383,23 +451,33 @@
           return normalized;
         }).filter((item) => !!item.url);
 
-        if (!normalizedItems.length && items.length) {
-          setStatus("cache", "Cache local");
-          return;
+        if (!normalizedItems.length) {
+          const snapshotItems = loadPlaylistSnapshot();
+          if (snapshotItems.length) {
+            items = snapshotItems;
+            setStatus("cache", "Cache local");
+            startPlaybackIfNeeded();
+            return;
+          }
+          if (items.length) {
+            setStatus("cache", "Cache local");
+            return;
+          }
         }
 
-        const firstLoad = !started;
         items = normalizedItems;
+        savePlaylistSnapshot(items);
         prefetchMedia(items);
         setStatus("online", "Online");
         sendHeartbeat();
-        if (firstLoad) {
-          idx = 0;
-          started = true;
-          next();
-        }
+        startPlaybackIfNeeded();
       } catch (e) {
-        if (!items.length) {
+        const snapshotItems = loadPlaylistSnapshot();
+        if (!items.length && snapshotItems.length) {
+          items = snapshotItems;
+          setStatus("cache", "Cache local");
+          startPlaybackIfNeeded();
+        } else if (!items.length) {
           stopAll();
           show("image");
           img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
