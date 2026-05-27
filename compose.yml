@@ -31,7 +31,7 @@ services:
         - CMD
         - php
         - -r
-        - exit(file_exists('/var/www/html/index.php') ? 0 : 1);
+        - "exit(file_exists('/var/www/html/index.php') ? 0 : 1);"
       interval: 30s
       timeout: 5s
       retries: 3
