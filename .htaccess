@@ -4,7 +4,8 @@ Options -Indexes
 
 RewriteEngine On
 
-# Forçar HTTPS sem loop na Hostinger
+# Forcar HTTPS sem loop atras de proxy, mas permitir acesso direto por porta publicada do Docker.
 RewriteCond %{HTTPS} off
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTP_HOST} !:\d+$
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
