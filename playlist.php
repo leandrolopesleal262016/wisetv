@@ -15,6 +15,9 @@ function env_config_path($name, $defaultPath)
 if (!defined('PLAYLISTS_DIR')) {
   define('PLAYLISTS_DIR', env_config_path('WISETV_ROOT_PLAYLISTS_DIR', __DIR__ . '/playlists'));
 }
+if (!defined('MIDIAS_DIR')) {
+  define('MIDIAS_DIR', env_config_path('WISETV_MEDIA_DIR', dirname(__DIR__) . '/midias'));
+}
 if (!defined('STATUS_DIR')) {
   define('STATUS_DIR', env_config_path('WISETV_ROOT_STATUS_DIR', __DIR__ . '/status'));
 }
@@ -57,6 +60,44 @@ function normalize_playlist_media_url($url)
   return $value;
 }
 
+function playlist_item_has_available_media($item)
+{
+  if (!is_array($item)) {
+    return false;
+  }
+
+  $type = isset($item['type']) ? trim((string)$item['type']) : 'video';
+  $url = isset($item['url']) ? trim((string)$item['url']) : '';
+  if ($url === '') {
+    return false;
+  }
+
+  if ($type !== 'video' && $type !== 'image') {
+    return true;
+  }
+
+  if (preg_match('/^(https?:|data:|blob:)/i', $url)) {
+    return true;
+  }
+
+  $path = parse_url($url, PHP_URL_PATH);
+  if (!is_string($path) || $path === '') {
+    $path = $url;
+  }
+  $path = str_replace('\\', '/', $path);
+
+  if (strpos($path, '/midias/') !== false || strpos($path, 'midias/') === 0) {
+    $filename = basename($path);
+    if ($filename === '' || $filename === '.' || $filename === '..') {
+      return false;
+    }
+
+    return is_file(MIDIAS_DIR . '/' . rawurldecode($filename));
+  }
+
+  return true;
+}
+
 function normalize_playlist_payload($payload)
 {
   if (!is_array($payload) || !isset($payload['playlist']) || !is_array($payload['playlist'])) {
@@ -66,6 +107,9 @@ function normalize_playlist_payload($payload)
   $normalized = array();
   foreach ($payload['playlist'] as $item) {
     if (!is_array($item)) {
+      continue;
+    }
+    if (!playlist_item_has_available_media($item)) {
       continue;
     }
     if (isset($item['url'])) {

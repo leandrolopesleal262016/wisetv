@@ -63,4 +63,13 @@ seed_dir_if_empty "$REPO_DIR/player/status" "$DATA_DIR/player/status"
 seed_file_if_missing "$REPO_DIR/devices.json" "$DATA_DIR/root/devices.json" '{"devices":{}}'
 seed_file_if_missing "$REPO_DIR/player/devices.json" "$DATA_DIR/player/devices.json" '{"devices":{}}'
 
+if command -v chown >/dev/null 2>&1; then
+  chown -R 33:33 "$DATA_DIR"
+fi
+
+if command -v find >/dev/null 2>&1; then
+  find "$DATA_DIR" -type d -exec chmod 775 {} \;
+  find "$DATA_DIR" -type f -exec chmod 664 {} \;
+fi
+
 echo "Bootstrap concluido em: $DATA_DIR"
