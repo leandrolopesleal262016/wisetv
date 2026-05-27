@@ -35,9 +35,10 @@
     }
 
     .page {
-      max-width: 1100px;
-      margin: 24px auto;
-      padding: 0 16px calc(30px + env(safe-area-inset-bottom));
+      width: 100%;
+      max-width: none;
+      margin: clamp(10px, 2vw, 24px) auto;
+      padding: 0 clamp(10px, 2vw, 18px) calc(30px + env(safe-area-inset-bottom));
     }
 
     .header {
@@ -59,7 +60,14 @@
       flex-wrap: wrap;
     }
 
-    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .sidebar-card { min-width: 0; }
+    .main-card { min-width: 0; }
 
     .card {
       background: var(--card);
@@ -115,8 +123,8 @@
     .btn-ok { background: var(--ok); }
     .btn-danger { background: var(--danger); }
 
-    .row { display: flex; gap: 8px; margin-bottom: 8px; }
-    .row > * { flex: 1; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: stretch; }
+    .row > * { flex: 1; min-width: 0; }
 
     .small { font-size: 0.84rem; color: var(--muted); margin-top: 6px; }
     .section-divider {
@@ -127,6 +135,87 @@
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .stack-actions { margin-bottom: 10px; }
     .is-hidden { display: none !important; }
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .checklist-panel {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8faff;
+    }
+    .checklist-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .checklist-header strong {
+      display: block;
+      font-size: 0.92rem;
+    }
+    .checklist-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .checklist-toolbar button {
+      padding: 8px 10px;
+      font-size: 0.82rem;
+    }
+    .checklist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      max-height: 200px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #d9e1f4;
+      background: #fff;
+      min-height: 54px;
+    }
+    .check-item input {
+      width: 18px;
+      height: 18px;
+      margin: 1px 0 0;
+      flex: 0 0 auto;
+    }
+    .check-item strong,
+    .check-item span {
+      display: block;
+      min-width: 0;
+      word-break: break-word;
+    }
+    .check-item strong {
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+    .check-item span {
+      margin-top: 2px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .checklist-empty {
+      grid-column: 1 / -1;
+      border: 1px dashed #cad3eb;
+      border-radius: 10px;
+      padding: 12px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255, 255, 255, 0.9);
+    }
 
     .upload-loading {
       display: none;
@@ -348,6 +437,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 0.86rem;
+      min-width: 520px;
     }
     .tv-status-table th,
     .tv-status-table td {
@@ -395,6 +485,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 0.85rem;
+      min-width: 720px;
     }
     .logs-table th,
     .logs-table td {
@@ -440,13 +531,25 @@
       margin-top: 4px;
     }
 
+    @media (min-width: 1080px) {
+      .sidebar-card {
+        position: sticky;
+        top: 12px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: minmax(0, 1fr); }
+      .sidebar-card { position: static; }
+    }
+
     @media (max-width: 900px) {
       .page { margin: 10px auto; padding: 0 10px calc(20px + env(safe-area-inset-bottom)); }
-      .grid { grid-template-columns: 1fr; }
       .header { padding: 16px; }
       .card { padding: 12px; border-radius: 12px; }
       .playlist-head { align-items: flex-start; }
       .playlist-thumb { width: 84px; height: 56px; }
+      .checklist-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
       select,
       input[type="text"],
       input[type="number"],
@@ -464,6 +567,10 @@
       .playlist-head { gap: 8px; }
       .playlist-thumb { width: 72px; height: 48px; }
       .drag-handle { width: 24px; height: 24px; }
+      .checklist-header { flex-direction: column; }
+      .checklist-toolbar { width: 100%; }
+      .checklist-toolbar button { flex: 1 1 110px; }
+      .checklist-grid { grid-template-columns: 1fr; max-height: none; }
       .media-selected-card,
       .media-card {
         grid-template-columns: 1fr;
@@ -482,7 +589,7 @@
     </section>
 
     <section class="grid">
-      <aside class="card">
+      <aside class="card sidebar-card">
         <h2>TV e Conteudo</h2>
 
         <label for="deviceSelect">TV (device)</label>
@@ -514,6 +621,13 @@
           <button id="createDeviceBtn" type="button">Criar TV</button>
         </div>
         <div class="small">Novas TVs recebem IDs automaticos no padrao tv01, tv02, tv03...</div>
+
+        <label for="cloneDeviceFriendlyInput" style="margin-top:12px;">Clonar playlist atual em uma nova TV</label>
+        <div class="row">
+          <input id="cloneDeviceFriendlyInput" type="text" placeholder="Nome amigavel da nova TV" />
+          <button id="clonePlaylistBtn" class="btn-secondary" type="button">Clonar playlist</button>
+        </div>
+        <div class="small">Cria uma nova TV com o proximo ID disponivel e copia a playlist da TV selecionada.</div>
 
         <hr class="section-divider">
 
@@ -547,6 +661,18 @@
 
         <label for="uploadInput">Enviar nova midia (salva apenas na pasta /midias)</label>
         <input id="uploadInput" type="file" accept=".jpeg,.jpg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v" />
+        <div id="playlistBulkSection" class="checklist-panel">
+          <div class="checklist-header">
+            <strong>Ao enviar uma nova midia, adicionar tambem em:</strong>
+            <div class="checklist-toolbar">
+              <button id="selectAllPlaylistsBtn" class="btn-secondary" type="button">Marcar todas</button>
+              <button id="selectCurrentPlaylistBtn" class="btn-secondary" type="button">So TV atual</button>
+              <button id="clearPlaylistSelectionBtn" class="btn-secondary" type="button">Limpar</button>
+            </div>
+          </div>
+          <div id="playlistCheckboxContainer" class="checklist-grid"></div>
+          <div class="small">A nova midia sera inserida no final das playlists marcadas logo apos o upload.</div>
+        </div>
         <div id="uploadLoading" class="upload-loading">
           <span class="spinner"></span>
           <span>Enviando arquivo...</span>
@@ -570,20 +696,24 @@
         <div id="status"></div>
       </aside>
 
-      <section class="card">
+      <section class="card main-card">
         <h2 id="playlistTitle">Playlist da TV</h2>
         <div id="playlistContainer" class="playlist-list"></div>
 
         <div class="tv-status">
           <h3>TVs Online</h3>
-          <div id="tvStatusContainer" class="small">Carregando status...</div>
+          <div class="table-wrap">
+            <div id="tvStatusContainer" class="small">Carregando status...</div>
+          </div>
         </div>
 
         <div class="logs-header">
           <h3>Incidentes do Player</h3>
           <button id="refreshLogsBtn" class="btn-secondary" type="button">Atualizar logs</button>
         </div>
-        <div id="playerLogsContainer" class="small">Carregando logs...</div>
+        <div class="table-wrap">
+          <div id="playerLogsContainer" class="small">Carregando logs...</div>
+        </div>
       </section>
     </section>
   </main>
@@ -609,6 +739,7 @@
     const deviceIdInput = document.getElementById("deviceIdInput");
     const deviceEndpointInput = document.getElementById("deviceEndpointInput");
     const newDeviceFriendlyInput = document.getElementById("newDeviceFriendlyInput");
+    const cloneDeviceFriendlyInput = document.getElementById("cloneDeviceFriendlyInput");
     const mediaSelect = document.getElementById("mediaSelect");
     const selectedMediaCard = document.getElementById("selectedMediaCard");
     const mediaGallery = document.getElementById("mediaGallery");
@@ -619,6 +750,11 @@
     const uploadInput = document.getElementById("uploadInput");
     const uploadLoadingEl = document.getElementById("uploadLoading");
     const uploadPolicyHint = document.getElementById("uploadPolicyHint");
+    const playlistBulkSection = document.getElementById("playlistBulkSection");
+    const playlistCheckboxContainer = document.getElementById("playlistCheckboxContainer");
+    const selectAllPlaylistsBtn = document.getElementById("selectAllPlaylistsBtn");
+    const selectCurrentPlaylistBtn = document.getElementById("selectCurrentPlaylistBtn");
+    const clearPlaylistSelectionBtn = document.getElementById("clearPlaylistSelectionBtn");
     const youtubeUrlInput = document.getElementById("youtubeUrlInput");
     const liveEmbedInput = document.getElementById("liveEmbedInput");
     const statusEl = document.getElementById("status");
@@ -633,6 +769,7 @@
     const deleteMediaBtn = document.getElementById("deleteMediaBtn");
     const saveDeviceBtn = document.getElementById("saveDeviceBtn");
     const deleteDeviceBtn = document.getElementById("deleteDeviceBtn");
+    const clonePlaylistBtn = document.getElementById("clonePlaylistBtn");
     const previewBtn = document.getElementById("previewBtn");
     const refreshLogsBtn = document.getElementById("refreshLogsBtn");
     const mediaPreviewModal = document.getElementById("mediaPreviewModal");
@@ -655,6 +792,7 @@
       playerLogs: [],
       selectedDevice: "",
       selectedMediaName: "",
+      bulkTargetDevices: [],
       playlist: [],
       saveTimer: null,
       isSaving: false,
@@ -828,6 +966,26 @@
       return `${friendly} (${id})`;
     }
 
+    function normalizeDeviceList(deviceIds) {
+      const known = new Set(state.devices.map((item) => item.id));
+      return Array.from(new Set(
+        (Array.isArray(deviceIds) ? deviceIds : [])
+          .map((value) => String(value || "").trim())
+          .filter((value) => known.has(value))
+      ));
+    }
+
+    function ensureBulkTargetDevices(preferredDevice = state.selectedDevice) {
+      state.bulkTargetDevices = normalizeDeviceList(state.bulkTargetDevices);
+      if (!state.bulkTargetDevices.length && preferredDevice) {
+        state.bulkTargetDevices = normalizeDeviceList([preferredDevice]);
+      }
+    }
+
+    function getSelectedBulkTargetDevices() {
+      return normalizeDeviceList(state.bulkTargetDevices);
+    }
+
     function getSelectedMediaOption() {
       const option = mediaSelect.options[mediaSelect.selectedIndex];
       if (!option || !option.value) return null;
@@ -884,13 +1042,70 @@
       uploadPolicyHint.textContent = `Videos acima de ${width}x${height} nao devem ser enviados neste servidor, porque o ffmpeg nao esta disponivel para conversao automatica.`;
     }
 
+    function renderPlaylistTargetSelection() {
+      ensureBulkTargetDevices();
+      playlistCheckboxContainer.innerHTML = "";
+      playlistBulkSection.classList.toggle("is-hidden", !state.devices.length);
+
+      if (!state.devices.length) {
+        return;
+      }
+
+      state.devices.forEach((device) => {
+        const item = document.createElement("label");
+        item.className = "check-item";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = device.id;
+        checkbox.checked = state.bulkTargetDevices.includes(device.id);
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) {
+            state.bulkTargetDevices = normalizeDeviceList(state.bulkTargetDevices.concat(device.id));
+          } else {
+            state.bulkTargetDevices = state.bulkTargetDevices.filter((id) => id !== device.id);
+          }
+          renderPlaylistTargetSelection();
+        });
+
+        const text = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = device.friendly_name || device.id;
+        const subtitle = document.createElement("span");
+        subtitle.textContent = device.id;
+
+        text.appendChild(title);
+        text.appendChild(subtitle);
+        item.appendChild(checkbox);
+        item.appendChild(text);
+        playlistCheckboxContainer.appendChild(item);
+      });
+
+      if (!state.bulkTargetDevices.length) {
+        const empty = document.createElement("div");
+        empty.className = "checklist-empty";
+        empty.textContent = "Nenhuma playlist marcada. O upload vai apenas salvar a midia em /midias.";
+        playlistCheckboxContainer.appendChild(empty);
+      }
+
+      updateActionStates();
+    }
+
+    function setBulkTargetDevices(deviceIds) {
+      state.bulkTargetDevices = normalizeDeviceList(deviceIds);
+      renderPlaylistTargetSelection();
+      updateActionStates();
+    }
+
     function updateActionStates() {
       const hasDevice = !!state.selectedDevice;
       const hasSelectedMedia = !!getSelectedMediaOption();
+      const hasDevices = state.devices.length > 0;
 
       deviceFriendlyInput.disabled = !hasDevice;
       saveDeviceBtn.disabled = !hasDevice;
       deleteDeviceBtn.disabled = !hasDevice;
+      clonePlaylistBtn.disabled = !hasDevice;
       previewBtn.disabled = !hasDevice;
 
       addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
@@ -898,6 +1113,9 @@
       mediaRenameInput.disabled = !hasSelectedMedia;
       renameMediaBtn.disabled = !hasSelectedMedia;
       deleteMediaBtn.disabled = !hasSelectedMedia;
+      selectAllPlaylistsBtn.disabled = !hasDevices;
+      selectCurrentPlaylistBtn.disabled = !hasDevice;
+      clearPlaylistSelectionBtn.disabled = !hasDevices;
     }
 
     function fillMediaRenameInput() {
@@ -1284,6 +1502,7 @@
 
       deviceSelect.value = state.selectedDevice;
       renderSelectedDeviceDetails();
+      renderPlaylistTargetSelection();
     }
 
     function renderMediaOptions() {
@@ -1693,7 +1912,7 @@
         action: "list_player_logs",
         device,
         limit: 40,
-        severity: "warn,error"
+        severity: "error"
       });
       state.playerLogs = Array.isArray(data.logs) ? data.logs : [];
       renderPlayerLogs();
@@ -1836,6 +2055,18 @@
       scheduleAutoSave("Live embed adicionada e salva automaticamente.");
     }
 
+    async function appendItemToPlaylists(item, targetDevices = getSelectedBulkTargetDevices()) {
+      const devices = normalizeDeviceList(targetDevices);
+      if (!devices.length) {
+        return { count: 0, devices: [], skipped_devices: [] };
+      }
+
+      return apiPost("append_item_to_playlists", {
+        devices,
+        item
+      });
+    }
+
     async function uploadMedia() {
       if (!uploadInput.files || !uploadInput.files.length) return;
 
@@ -1860,14 +2091,42 @@
         await loadMedia(result.name);
         fillMediaRenameInput();
 
+        let bulkResult = null;
+        let bulkError = "";
+        const uploadItem = {
+          type: result.type,
+          url: normalizeMediaPath(result.url)
+        };
+        if (result.type === "image") {
+          const durationValue = Number(durationInput.value || 0);
+          uploadItem.duration = durationValue > 0 ? durationValue : 10;
+        }
+
+        try {
+          bulkResult = await appendItemToPlaylists(uploadItem);
+        } catch (error) {
+          bulkError = error.message;
+        }
+
+        if (bulkResult && bulkResult.count > 0 && state.selectedDevice && bulkResult.devices.includes(state.selectedDevice)) {
+          await loadPlaylist(state.selectedDevice);
+        }
+
         const videoMeta = analysis && analysis.metadata
           ? ` (${analysis.metadata.width}x${analysis.metadata.height})`
           : "";
         const conversionNote = result.converted_to_hd
           ? " O video foi convertido automaticamente para HD."
           : (analysis && analysis.willConvert ? " O video sera ajustado para HD no servidor." : "");
+        const bulkNote = bulkResult && bulkResult.count > 0
+          ? ` Adicionada em ${bulkResult.count} playlist(s).`
+          : "";
 
-        setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote}`.trim());
+        if (bulkError) {
+          setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote} Falha ao inserir automaticamente nas playlists: ${bulkError}`.trim(), true);
+        } else {
+          setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote}${bulkNote}`.trim());
+        }
       } finally {
         setUploadLoading(false);
       }
@@ -1917,6 +2176,36 @@
         await loadDeviceStatus();
 
         setStatus(`TV ${result.device.id} criada com sucesso.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    async function cloneCurrentPlaylist() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione a TV atual para clonar a playlist.", true);
+        return;
+      }
+
+      const friendlyName = cloneDeviceFriendlyInput.value.trim();
+      if (!friendlyName) {
+        setStatus("Informe o nome amigavel da nova TV clonada.", true);
+        return;
+      }
+
+      try {
+        const result = await apiPost("clone_playlist", {
+          source_device: state.selectedDevice,
+          friendly_name: friendlyName
+        });
+
+        cloneDeviceFriendlyInput.value = "";
+        await loadDevices(result.device.id);
+        await loadPlaylist(result.device.id);
+        await loadDeviceStatus();
+        setBulkTargetDevices([result.device.id]);
+
+        setStatus(`Playlist clonada para ${result.device.id} com ${result.count} item(ns).`);
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -2104,6 +2393,7 @@
     });
 
     document.getElementById("createDeviceBtn").addEventListener("click", createDeviceFromInput);
+    clonePlaylistBtn.addEventListener("click", cloneCurrentPlaylist);
     document.getElementById("addYoutubeBtn").addEventListener("click", addYoutubeVideo);
     document.getElementById("addLiveEmbedBtn").addEventListener("click", addLiveEmbed);
     addMediaBtn.addEventListener("click", addSelectedMedia);
@@ -2113,6 +2403,15 @@
     saveDeviceBtn.addEventListener("click", saveSelectedDeviceName);
     deleteDeviceBtn.addEventListener("click", deleteSelectedDevice);
     previewBtn.addEventListener("click", openPreview);
+    selectAllPlaylistsBtn.addEventListener("click", () => {
+      setBulkTargetDevices(state.devices.map((device) => device.id));
+    });
+    selectCurrentPlaylistBtn.addEventListener("click", () => {
+      setBulkTargetDevices(state.selectedDevice ? [state.selectedDevice] : []);
+    });
+    clearPlaylistSelectionBtn.addEventListener("click", () => {
+      setBulkTargetDevices([]);
+    });
     refreshLogsBtn.addEventListener("click", async () => {
       try {
         await loadPlayerLogs();
@@ -2142,6 +2441,13 @@
       if (event.key === "Enter") {
         event.preventDefault();
         createDeviceFromInput();
+      }
+    });
+
+    cloneDeviceFriendlyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        cloneCurrentPlaylist();
       }
     });
 

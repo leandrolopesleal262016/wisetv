@@ -830,6 +830,68 @@ function build_playlist_payload($playlistItems, $version = null)
     );
 }
 
+function normalize_playlist_item($item)
+{
+    if (!is_array($item)) {
+        return null;
+    }
+
+    $type = isset($item['type']) ? trim((string)$item['type']) : '';
+    $url = trim((string)(isset($item['url']) ? $item['url'] : ''));
+    $duration = (int)(isset($item['duration']) ? $item['duration'] : 0);
+
+    if (($type !== 'image' && $type !== 'video' && $type !== 'embed' && $type !== 'youtube') || $url === '') {
+        return null;
+    }
+
+    $entry = array(
+        'type' => $type,
+        'url' => $url
+    );
+
+    if ($type === 'image') {
+        $entry['duration'] = $duration > 0 ? $duration : 10;
+    } elseif ($type === 'embed') {
+        $entry['duration'] = $duration >= 15 ? $duration : 60;
+    } elseif ($duration > 0) {
+        $entry['duration'] = $duration;
+    }
+
+    return $entry;
+}
+
+function normalize_playlist_items($playlist)
+{
+    $normalized = array();
+    if (!is_array($playlist)) {
+        return $normalized;
+    }
+
+    foreach ($playlist as $item) {
+        $entry = normalize_playlist_item($item);
+        if ($entry !== null) {
+            $normalized[] = $entry;
+        }
+    }
+
+    return $normalized;
+}
+
+function load_playlist_file($device)
+{
+    $path = playlist_path_for_device($device);
+    if (!file_exists($path)) {
+        return null;
+    }
+
+    $payload = load_json_file($path);
+    if (!is_array($payload) || !isset($payload['playlist']) || !is_array($payload['playlist'])) {
+        return null;
+    }
+
+    return $payload;
+}
+
 function read_device_status($device)
 {
     $path = get_status_storage_dir() . '/' . $device . '.json';
@@ -1328,31 +1390,7 @@ if ($method === 'POST' && $action === 'save_playlist') {
         json_error('Dados incompletos', 400);
     }
 
-    $normalized = array();
-    foreach ($playlist as $item) {
-        if (!is_array($item)) {
-            continue;
-        }
-
-        $type = isset($item['type']) ? $item['type'] : '';
-        $url = trim((string)(isset($item['url']) ? $item['url'] : ''));
-        $duration = (int)(isset($item['duration']) ? $item['duration'] : 0);
-
-        if (($type !== 'image' && $type !== 'video' && $type !== 'embed' && $type !== 'youtube') || $url === '') {
-            continue;
-        }
-
-        $entry = array('type' => $type, 'url' => $url);
-        if ($type === 'image') {
-            $entry['duration'] = $duration > 0 ? $duration : 10;
-        } elseif ($type === 'embed') {
-            $entry['duration'] = $duration >= 15 ? $duration : 60;
-        } elseif ($duration > 0) {
-            $entry['duration'] = $duration;
-        }
-
-        $normalized[] = $entry;
-    }
+    $normalized = normalize_playlist_items($playlist);
 
     $version = generate_playlist_version();
     $path = playlist_path_for_device($device);
@@ -1365,6 +1403,64 @@ if ($method === 'POST' && $action === 'save_playlist') {
         'device' => $device,
         'count' => count($normalized),
         'playlist_version' => $version
+    ));
+}
+
+if ($method === 'POST' && $action === 'append_item_to_playlists') {
+    $body = read_json_body();
+    $devices = isset($body['devices']) && is_array($body['devices']) ? $body['devices'] : array();
+    $item = normalize_playlist_item(isset($body['item']) ? $body['item'] : null);
+
+    if ($item === null) {
+        json_error('Item de playlist invalido', 400);
+    }
+
+    $normalizedDevices = array_values(array_unique(array_filter(array_map('sanitize_device', $devices), function ($value) {
+        return $value !== '';
+    })));
+
+    if (empty($normalizedDevices)) {
+        json_error('Selecione ao menos uma playlist', 400);
+    }
+
+    $registry = load_device_registry();
+    $knownDevices = array_flip(list_all_device_ids($registry));
+    $updatedDevices = array();
+    $skippedDevices = array();
+
+    foreach ($normalizedDevices as $device) {
+        if (!isset($knownDevices[$device]) && !file_exists(playlist_path_for_device($device))) {
+            $skippedDevices[] = $device;
+            continue;
+        }
+
+        if (!ensure_playlist_file($device)) {
+            json_error('Nao foi possivel preparar a playlist da TV ' . $device, 500);
+        }
+
+        $payload = load_playlist_file($device);
+        $playlistItems = is_array($payload) && isset($payload['playlist']) && is_array($payload['playlist'])
+            ? normalize_playlist_items($payload['playlist'])
+            : array();
+
+        $playlistItems[] = $item;
+        if (!save_json_file(playlist_path_for_device($device), build_playlist_payload($playlistItems))) {
+            json_error('Nao foi possivel atualizar a playlist da TV ' . $device, 500);
+        }
+
+        $updatedDevices[] = $device;
+    }
+
+    if (empty($updatedDevices)) {
+        json_error('Nenhuma playlist valida foi atualizada', 400);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'devices' => $updatedDevices,
+        'skipped_devices' => $skippedDevices,
+        'count' => count($updatedDevices),
+        'item' => $item
     ));
 }
 
@@ -1390,6 +1486,47 @@ if ($method === 'POST' && $action === 'create_device') {
     json_ok(array(
         'ok' => true,
         'device' => build_device_payload($device, $registry)
+    ));
+}
+
+if ($method === 'POST' && $action === 'clone_playlist') {
+    $body = read_json_body();
+    $sourceDevice = sanitize_device(isset($body['source_device']) ? $body['source_device'] : '');
+    $friendlyName = sanitize_label(isset($body['friendly_name']) ? $body['friendly_name'] : '');
+
+    if ($sourceDevice === '') {
+        json_error('Selecione a TV de origem da playlist', 400);
+    }
+
+    $sourcePayload = load_playlist_file($sourceDevice);
+    if (!is_array($sourcePayload)) {
+        json_error('Playlist de origem nao encontrada', 404);
+    }
+
+    $registry = load_device_registry();
+    $device = next_device_id(list_all_device_ids($registry));
+    $playlistItems = normalize_playlist_items($sourcePayload['playlist']);
+    $playlistPath = playlist_path_for_device($device);
+
+    if (!save_json_file($playlistPath, build_playlist_payload($playlistItems))) {
+        json_error('Nao foi possivel clonar a playlist para a nova TV', 500);
+    }
+
+    $registry['devices'][$device] = array(
+        'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
+        'created_at' => gmdate('c')
+    );
+
+    if (!save_device_registry($registry)) {
+        @unlink($playlistPath);
+        json_error('Nao foi possivel salvar os dados da nova TV', 500);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'source_device' => $sourceDevice,
+        'device' => build_device_payload($device, $registry),
+        'count' => count($playlistItems)
     ));
 }
 
