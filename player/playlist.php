@@ -111,8 +111,7 @@ if (!file_exists($path)) {
 // Fallback de presenca online: toda vez que a TV pedir playlist, atualiza last_seen.
 $statusCandidates = array(
   __DIR__ . "/status",
-  __DIR__ . "/playlists/status",
-  __DIR__ . "/playlists"
+  __DIR__ . "/playlists/status"
 );
 $statusDir = null;
 foreach ($statusCandidates as $dir) {

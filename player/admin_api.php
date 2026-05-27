@@ -348,8 +348,7 @@ function get_status_storage_dir()
 
     $candidates = array(
         STATUS_DIR,
-        PLAYLISTS_DIR . '/status',
-        PLAYLISTS_DIR
+        PLAYLISTS_DIR . '/status'
     );
 
     foreach ($candidates as $dir) {
@@ -362,7 +361,7 @@ function get_status_storage_dir()
         }
     }
 
-    $resolved = PLAYLISTS_DIR;
+    $resolved = STATUS_DIR;
     return $resolved;
 }
 
@@ -413,6 +412,17 @@ function playlist_version_for_device($device, $payload = null)
     $path = playlist_path_for_device($device);
     if (!file_exists($path)) {
         return '';
+    }
+
+    if ($payload === null) {
+        $contents = file_get_contents($path);
+        if ($contents !== false) {
+            $decoded = json_decode($contents, true);
+            $version = extract_playlist_version($decoded);
+            if ($version !== '') {
+                return $version;
+            }
+        }
     }
 
     $modified = (int)@filemtime($path);
