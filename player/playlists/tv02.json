@@ -99,6 +99,14 @@
         {
             "type": "video",
             "url": "/WiseTV/midias/acougue_neno_tela.mp4"
+        },
+        {
+            "type": "video",
+            "url": "/WiseTV/midias/cassianos2_20260522_220544.mp4"
         }
-    ]
+    ],
+    "_meta": {
+        "playlist_version": "1779487811244410",
+        "updated_at": "2026-05-22T22:10:11+00:00"
+    }
 }

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="WiseTV Painel" />
-  <meta name="wisetv-build" content="2026-03-25-hostinger-fix-1" />
+  <meta name="wisetv-build" content="2026-05-06-player-logging-1" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/app-icon.svg" type="image/svg+xml" />
   <title>WiseTV Painel</title>
@@ -377,6 +377,69 @@
     .tv-dot.online { background: #1f8a4d; }
     .tv-dot.offline { background: #cc2f2f; }
 
+    .logs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 14px 0 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      flex-wrap: wrap;
+    }
+    .logs-header h3 {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .logs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .logs-table th,
+    .logs-table td {
+      border-bottom: 1px solid #e8edf8;
+      text-align: left;
+      padding: 8px 4px;
+      vertical-align: top;
+    }
+    .log-severity {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .log-severity.warn {
+      background: #fff3d6;
+      color: #8a6300;
+    }
+    .log-severity.error {
+      background: #ffe1e1;
+      color: #a32828;
+    }
+    .log-severity.info {
+      background: #e6efff;
+      color: #1845d8;
+    }
+    .log-event-title {
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      text-transform: capitalize;
+    }
+    .log-event-message {
+      color: #3b4663;
+      line-height: 1.4;
+    }
+    .log-event-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-top: 4px;
+    }
+
     @media (max-width: 900px) {
       .page { margin: 10px auto; padding: 0 10px calc(20px + env(safe-area-inset-bottom)); }
       .grid { grid-template-columns: 1fr; }
@@ -515,6 +578,12 @@
           <h3>TVs Online</h3>
           <div id="tvStatusContainer" class="small">Carregando status...</div>
         </div>
+
+        <div class="logs-header">
+          <h3>Incidentes do Player</h3>
+          <button id="refreshLogsBtn" class="btn-secondary" type="button">Atualizar logs</button>
+        </div>
+        <div id="playerLogsContainer" class="small">Carregando logs...</div>
       </section>
     </section>
   </main>
@@ -530,7 +599,7 @@
   </div>
 
   <script>
-    const buildTag = "2026-03-25-hostinger-fix-1";
+    const buildTag = "2026-05-06-player-logging-1";
     const apiBase = new URL("admin_api.php", window.location.href).toString();
     const appBase = new URL("../", window.location.href);
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
@@ -556,6 +625,7 @@
     const playlistTitle = document.getElementById("playlistTitle");
     const playlistContainer = document.getElementById("playlistContainer");
     const tvStatusContainer = document.getElementById("tvStatusContainer");
+    const playerLogsContainer = document.getElementById("playerLogsContainer");
     const installBtn = document.getElementById("installBtn");
     const addMediaBtn = document.getElementById("addMediaBtn");
     const viewMediaBtn = document.getElementById("viewMediaBtn");
@@ -564,6 +634,7 @@
     const saveDeviceBtn = document.getElementById("saveDeviceBtn");
     const deleteDeviceBtn = document.getElementById("deleteDeviceBtn");
     const previewBtn = document.getElementById("previewBtn");
+    const refreshLogsBtn = document.getElementById("refreshLogsBtn");
     const mediaPreviewModal = document.getElementById("mediaPreviewModal");
     const mediaPreviewTitle = document.getElementById("mediaPreviewTitle");
     const mediaPreviewStage = document.getElementById("mediaPreviewStage");
@@ -581,6 +652,7 @@
         video_max_height: 1080
       },
       deviceStatus: [],
+      playerLogs: [],
       selectedDevice: "",
       selectedMediaName: "",
       playlist: [],
@@ -1065,6 +1137,31 @@
       return new Date(value * 1000).toLocaleString("pt-BR");
     }
 
+    function humanizeLogType(type) {
+      const value = String(type || "").replace(/_/g, " ").trim();
+      if (!value) return "Evento";
+      return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    function logSeverityLabel(severity) {
+      const normalized = String(severity || "info").toLowerCase();
+      if (normalized === "error") return "Erro";
+      if (normalized === "warn") return "Alerta";
+      return "Info";
+    }
+
+    function buildLogSummary(row) {
+      const parts = [];
+      if (row.message) parts.push(row.message);
+      if (row.reason) parts.push(`Motivo: ${row.reason}`);
+      if (row.error_message) parts.push(`Erro: ${row.error_message}`);
+      if (Number(row.error_code || 0) > 0) parts.push(`Codigo ${row.error_code}`);
+      if (Number(row.recovery_attempt || 0) > 0) parts.push(`Retry ${row.recovery_attempt}`);
+      if (row.cache_reset) parts.push("Cache local limpo");
+      if (row.watchdog_label) parts.push(`Watchdog: ${row.watchdog_label}`);
+      return parts.join(" | ");
+    }
+
     function probeVideoDuration(url) {
       return new Promise((resolve) => {
         const video = document.createElement("video");
@@ -1508,6 +1605,100 @@
       renderDeviceStatus();
     }
 
+    function renderPlayerLogs() {
+      if (!state.selectedDevice) {
+        playerLogsContainer.textContent = "Selecione uma TV para ver os incidentes.";
+        return;
+      }
+
+      if (!Array.isArray(state.playerLogs) || !state.playerLogs.length) {
+        playerLogsContainer.textContent = "Nenhum incidente recente registrado para esta TV.";
+        return;
+      }
+
+      const table = document.createElement("table");
+      table.className = "logs-table";
+
+      const thead = document.createElement("thead");
+      thead.innerHTML = "<tr><th>Quando</th><th>Midia</th><th>Evento</th></tr>";
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+
+      state.playerLogs.forEach((row) => {
+        const tr = document.createElement("tr");
+
+        const whenCell = document.createElement("td");
+        whenCell.textContent = formatLastSeen(row.timestamp_unix);
+
+        const mediaCell = document.createElement("td");
+        const mediaName = document.createElement("div");
+        mediaName.className = "tv-status-name";
+        mediaName.textContent = row.media_name || row.media_type || "-";
+        mediaCell.appendChild(mediaName);
+        if (row.current_time || row.duration) {
+          const progress = document.createElement("div");
+          progress.className = "tv-status-code";
+          progress.textContent = `Tempo ${formatDuration(row.current_time || 0)} / ${formatDuration(row.duration || 0)}`;
+          mediaCell.appendChild(progress);
+        }
+
+        const eventCell = document.createElement("td");
+        const severity = document.createElement("div");
+        severity.className = `log-severity ${String(row.severity || "info").toLowerCase()}`;
+        severity.textContent = logSeverityLabel(row.severity);
+
+        const title = document.createElement("div");
+        title.className = "log-event-title";
+        title.textContent = humanizeLogType(row.type);
+
+        const message = document.createElement("div");
+        message.className = "log-event-message";
+        message.textContent = buildLogSummary(row) || "Sem detalhes adicionais.";
+
+        const meta = document.createElement("div");
+        meta.className = "log-event-meta";
+        const metaParts = [];
+        if (row.playlist_version) metaParts.push(`Playlist ${row.playlist_version}`);
+        if (Number.isInteger(Number(row.item_index)) && Number(row.item_index) >= 0) metaParts.push(`Item ${row.item_index + 1}`);
+        if (row.current_src && row.current_src !== row.url) metaParts.push("Origem alterada no player");
+        meta.textContent = metaParts.join(" | ");
+
+        eventCell.appendChild(severity);
+        eventCell.appendChild(title);
+        eventCell.appendChild(message);
+        if (meta.textContent) {
+          eventCell.appendChild(meta);
+        }
+
+        tr.appendChild(whenCell);
+        tr.appendChild(mediaCell);
+        tr.appendChild(eventCell);
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      playerLogsContainer.innerHTML = "";
+      playerLogsContainer.appendChild(table);
+    }
+
+    async function loadPlayerLogs(device = state.selectedDevice) {
+      if (!device) {
+        state.playerLogs = [];
+        renderPlayerLogs();
+        return;
+      }
+
+      const data = await apiGet({
+        action: "list_player_logs",
+        device,
+        limit: 40,
+        severity: "warn,error"
+      });
+      state.playerLogs = Array.isArray(data.logs) ? data.logs : [];
+      renderPlayerLogs();
+    }
+
     async function loadMedia(preferredMediaName = state.selectedMediaName) {
       const data = await apiGet({ action: "list_media" });
       state.media = Array.isArray(data.media) ? data.media : [];
@@ -1534,8 +1725,10 @@
       if (!device) {
         state.selectedDevice = "";
         state.playlist = [];
+        state.playerLogs = [];
         renderDeviceOptions();
         renderPlaylist();
+        renderPlayerLogs();
         setStatus("");
         return;
       }
@@ -1565,6 +1758,10 @@
 
       renderDeviceOptions();
       renderPlaylist();
+      loadPlayerLogs(device).catch(() => {
+        state.playerLogs = [];
+        renderPlayerLogs();
+      });
       setStatus(`Playlist carregada para ${getDeviceLabel(getDeviceRecord(device)) || device}.`);
     }
 
@@ -1916,6 +2113,14 @@
     saveDeviceBtn.addEventListener("click", saveSelectedDeviceName);
     deleteDeviceBtn.addEventListener("click", deleteSelectedDevice);
     previewBtn.addEventListener("click", openPreview);
+    refreshLogsBtn.addEventListener("click", async () => {
+      try {
+        await loadPlayerLogs();
+        setStatus(`Logs de ${state.selectedDevice} atualizados.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
     installBtn.addEventListener("click", installPwa);
     closeMediaPreviewBtn.addEventListener("click", closeMediaPreview);
 
@@ -1973,6 +2178,7 @@
         } else {
           renderDeviceOptions();
           renderPlaylist();
+          renderPlayerLogs();
         }
 
         if (mediaLoadError) {
@@ -1981,6 +2187,7 @@
 
         setInterval(() => {
           loadDeviceStatus().catch(() => {});
+          loadPlayerLogs().catch(() => {});
         }, 30000);
       } catch (error) {
         setStatus(error.message, true);

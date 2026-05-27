@@ -476,8 +476,7 @@ function get_status_storage_dir()
 
     $candidates = array(
         STATUS_DIR,
-        PLAYLISTS_DIR . '/status',
-        PLAYLISTS_DIR
+        PLAYLISTS_DIR . '/status'
     );
 
     foreach ($candidates as $dir) {
@@ -490,7 +489,7 @@ function get_status_storage_dir()
         }
     }
 
-    $resolved = PLAYLISTS_DIR;
+    $resolved = STATUS_DIR;
     return $resolved;
 }
 

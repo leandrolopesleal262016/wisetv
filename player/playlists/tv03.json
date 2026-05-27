@@ -83,6 +83,14 @@
         {
             "type": "video",
             "url": "/WiseTV/midias/Neon-piracast.mp4"
+        },
+        {
+            "type": "video",
+            "url": "/WiseTV/midias/cassianos2_20260522_220544.mp4"
         }
-    ]
+    ],
+    "_meta": {
+        "playlist_version": "1779881542570231",
+        "updated_at": "2026-05-27T11:32:22+00:00"
+    }
 }

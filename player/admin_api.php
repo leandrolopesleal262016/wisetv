@@ -18,6 +18,9 @@ if (!defined('MIDIAS_DIR')) {
 if (!defined('STATUS_DIR')) {
     define('STATUS_DIR', __DIR__ . '/status');
 }
+if (!defined('PLAYER_LOGS_DIR')) {
+    define('PLAYER_LOGS_DIR', __DIR__ . '/logs');
+}
 if (!defined('DEVICE_REGISTRY_FILE')) {
     define('DEVICE_REGISTRY_FILE', __DIR__ . '/devices.json');
 }
@@ -316,6 +319,9 @@ function ensure_directories()
     if (!is_dir(STATUS_DIR)) {
         @mkdir(STATUS_DIR, 0775, true);
     }
+    if (!is_dir(PLAYER_LOGS_DIR)) {
+        @mkdir(PLAYER_LOGS_DIR, 0775, true);
+    }
 }
 
 function ends_with($value, $suffix)
@@ -363,6 +369,390 @@ function get_status_storage_dir()
 
     $resolved = STATUS_DIR;
     return $resolved;
+}
+
+function get_player_logs_storage_dir()
+{
+    static $resolved = null;
+    if ($resolved !== null) {
+        return $resolved;
+    }
+
+    $candidates = array(
+        PLAYER_LOGS_DIR,
+        STATUS_DIR . '/logs',
+        PLAYLISTS_DIR . '/logs'
+    );
+
+    foreach ($candidates as $dir) {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        if (is_dir($dir) && is_writable($dir)) {
+            $resolved = $dir;
+            return $resolved;
+        }
+    }
+
+    $resolved = PLAYER_LOGS_DIR;
+    return $resolved;
+}
+
+function player_log_device_dir($device)
+{
+    $device = sanitize_device($device);
+    if ($device === '') {
+        return null;
+    }
+
+    $baseDir = get_player_logs_storage_dir();
+    $deviceDir = $baseDir . '/' . $device;
+    if (!is_dir($deviceDir)) {
+        @mkdir($deviceDir, 0775, true);
+    }
+
+    return is_dir($deviceDir) ? $deviceDir : null;
+}
+
+function truncate_log_text($value, $maxLength = 400)
+{
+    $text = trim((string)$value);
+    if ($text === '') {
+        return '';
+    }
+
+    if (function_exists('mb_substr')) {
+        return mb_substr($text, 0, $maxLength);
+    }
+
+    return substr($text, 0, $maxLength);
+}
+
+function sanitize_log_extra($value, $depth = 0)
+{
+    if ($depth >= 3) {
+        return null;
+    }
+
+    if (is_array($value)) {
+        $result = array();
+        $count = 0;
+        foreach ($value as $key => $entry) {
+            if ($count >= 20) {
+                break;
+            }
+            $normalizedKey = truncate_log_text(is_int($key) ? (string)$key : preg_replace('/[^a-zA-Z0-9_.:-]/', '_', (string)$key), 60);
+            if ($normalizedKey === '') {
+                $normalizedKey = 'item_' . $count;
+            }
+
+            $normalizedValue = sanitize_log_extra($entry, $depth + 1);
+            if ($normalizedValue === null) {
+                continue;
+            }
+
+            $result[$normalizedKey] = $normalizedValue;
+            $count++;
+        }
+        return $result;
+    }
+
+    if (is_bool($value) || is_int($value) || is_float($value)) {
+        return $value;
+    }
+
+    if ($value === null) {
+        return null;
+    }
+
+    $text = truncate_log_text($value, 300);
+    return $text === '' ? null : $text;
+}
+
+function sanitize_player_log_event($device, $event, $receivedAt)
+{
+    if (!is_array($event)) {
+        return null;
+    }
+
+    $type = truncate_log_text(isset($event['type']) ? $event['type'] : '', 80);
+    if ($type === '') {
+        return null;
+    }
+
+    $severity = strtolower(trim((string)(isset($event['severity']) ? $event['severity'] : 'info')));
+    if (!in_array($severity, array('info', 'warn', 'error'), true)) {
+        $severity = 'info';
+    }
+
+    $timestampUnix = isset($event['timestamp_unix']) ? (int)$event['timestamp_unix'] : 0;
+    if ($timestampUnix <= 0) {
+        $timestampUnix = $receivedAt;
+    }
+
+    $payload = array(
+        'device' => $device,
+        'type' => $type,
+        'severity' => $severity,
+        'timestamp_unix' => $timestampUnix,
+        'timestamp_iso' => gmdate('c', $timestampUnix),
+        'received_unix' => $receivedAt,
+        'received_iso' => gmdate('c', $receivedAt)
+    );
+
+    $stringFields = array(
+        'message' => 300,
+        'reason' => 120,
+        'media_name' => 180,
+        'media_type' => 40,
+        'url' => 300,
+        'current_src' => 300,
+        'playlist_version' => 80,
+        'watchdog_label' => 120,
+        'build' => 80,
+        'session_id' => 120,
+        'item_key' => 180,
+        'document_visibility' => 40,
+        'error_message' => 220
+    );
+
+    foreach ($stringFields as $field => $maxLength) {
+        if (!isset($event[$field])) {
+            continue;
+        }
+        $value = truncate_log_text($event[$field], $maxLength);
+        if ($value !== '') {
+            $payload[$field] = $value;
+        }
+    }
+
+    $numericFields = array(
+        'item_index',
+        'current_time',
+        'duration',
+        'ready_state',
+        'network_state',
+        'error_code',
+        'play_attempt',
+        'recovery_attempt'
+    );
+
+    foreach ($numericFields as $field) {
+        if (!isset($event[$field]) || $event[$field] === '') {
+            continue;
+        }
+        if (!is_numeric($event[$field])) {
+            continue;
+        }
+        $numericValue = $event[$field] + 0;
+        $payload[$field] = is_float($numericValue) ? (float)$numericValue : (int)$numericValue;
+    }
+
+    $boolFields = array(
+        'paused',
+        'ended',
+        'muted',
+        'online',
+        'cache_reset',
+        'autoplay_muted',
+        'from_cache_snapshot'
+    );
+
+    foreach ($boolFields as $field) {
+        if (isset($event[$field])) {
+            $payload[$field] = (bool)$event[$field];
+        }
+    }
+
+    if (isset($event['extra'])) {
+        $extra = sanitize_log_extra($event['extra']);
+        if (is_array($extra) && !empty($extra)) {
+            $payload['extra'] = $extra;
+        }
+    }
+
+    return $payload;
+}
+
+function write_player_log_events($device, $events)
+{
+    $deviceDir = player_log_device_dir($device);
+    if ($deviceDir === null || !is_array($events) || empty($events)) {
+        return 0;
+    }
+
+    $receivedAt = time();
+    $buffers = array();
+    $written = 0;
+
+    foreach ($events as $event) {
+        $payload = sanitize_player_log_event($device, $event, $receivedAt);
+        if (!is_array($payload)) {
+            continue;
+        }
+
+        $path = $deviceDir . '/' . gmdate('Y-m-d', (int)$payload['timestamp_unix']) . '.jsonl';
+        $json = json_encode_payload($payload);
+        if ($json === false) {
+            continue;
+        }
+
+        if (!isset($buffers[$path])) {
+            $buffers[$path] = '';
+        }
+        $buffers[$path] .= $json . PHP_EOL;
+        $written++;
+    }
+
+    if ($written <= 0) {
+        return 0;
+    }
+
+    foreach ($buffers as $path => $chunk) {
+        if (@file_put_contents($path, $chunk, FILE_APPEND | LOCK_EX) === false) {
+            return 0;
+        }
+    }
+
+    return $written;
+}
+
+function list_player_log_files($device)
+{
+    $baseDir = get_player_logs_storage_dir();
+    if (!is_dir($baseDir)) {
+        return array();
+    }
+
+    $devices = array();
+    $normalizedDevice = sanitize_device($device);
+    if ($normalizedDevice !== '') {
+        $devices[] = $normalizedDevice;
+    } else {
+        $entries = scandir($baseDir);
+        if ($entries === false) {
+            return array();
+        }
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $fullPath = $baseDir . '/' . $entry;
+            if (is_dir($fullPath)) {
+                $devices[] = sanitize_device($entry);
+            }
+        }
+    }
+
+    $files = array();
+    foreach ($devices as $deviceId) {
+        if ($deviceId === '') {
+            continue;
+        }
+
+        $deviceDir = $baseDir . '/' . $deviceId;
+        if (!is_dir($deviceDir)) {
+            continue;
+        }
+
+        $entries = scandir($deviceDir);
+        if ($entries === false) {
+            continue;
+        }
+
+        foreach ($entries as $entry) {
+            if (!ends_with($entry, '.jsonl')) {
+                continue;
+            }
+            $fullPath = $deviceDir . '/' . $entry;
+            if (!is_file($fullPath)) {
+                continue;
+            }
+            $files[] = array(
+                'device' => $deviceId,
+                'path' => $fullPath,
+                'name' => $entry,
+                'modified_unix' => (int)@filemtime($fullPath)
+            );
+        }
+    }
+
+    usort($files, function ($left, $right) {
+        $nameCompare = strcmp((string)$right['name'], (string)$left['name']);
+        if ($nameCompare !== 0) {
+            return $nameCompare;
+        }
+        return ((int)$right['modified_unix']) <=> ((int)$left['modified_unix']);
+    });
+
+    return $files;
+}
+
+function normalize_log_severities($value)
+{
+    $allowed = array('info', 'warn', 'error');
+    $result = array();
+    foreach (explode(',', (string)$value) as $entry) {
+        $severity = strtolower(trim($entry));
+        if (in_array($severity, $allowed, true)) {
+            $result[] = $severity;
+        }
+    }
+    return array_values(array_unique($result));
+}
+
+function read_recent_player_logs($device, $limit, $severities = array())
+{
+    $limit = (int)$limit;
+    if ($limit <= 0) {
+        $limit = 50;
+    }
+    if ($limit > 200) {
+        $limit = 200;
+    }
+
+    $allowedSeverities = array_values(array_unique(array_filter($severities, function ($value) {
+        return in_array($value, array('info', 'warn', 'error'), true);
+    })));
+
+    $logs = array();
+    foreach (list_player_log_files($device) as $file) {
+        $lines = @file($file['path'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || empty($lines)) {
+            continue;
+        }
+
+        for ($index = count($lines) - 1; $index >= 0; $index--) {
+            $decoded = json_decode($lines[$index], true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            $severity = isset($decoded['severity']) ? strtolower((string)$decoded['severity']) : 'info';
+            if (!empty($allowedSeverities) && !in_array($severity, $allowedSeverities, true)) {
+                continue;
+            }
+
+            if (!isset($decoded['device']) || trim((string)$decoded['device']) === '') {
+                $decoded['device'] = $file['device'];
+            }
+
+            $logs[] = $decoded;
+            if (count($logs) >= $limit) {
+                break 2;
+            }
+        }
+    }
+
+    usort($logs, function ($left, $right) {
+        $timeCompare = ((int)$right['timestamp_unix']) <=> ((int)$left['timestamp_unix']);
+        if ($timeCompare !== 0) {
+            return $timeCompare;
+        }
+        return ((int)$right['received_unix']) <=> ((int)$left['received_unix']);
+    });
+
+    return array_slice($logs, 0, $limit);
 }
 
 function write_device_status($device, $meta)
@@ -819,6 +1209,32 @@ if (($method === 'GET' || $method === 'POST') && $action === 'heartbeat') {
     ));
 }
 
+if ($method === 'POST' && $action === 'player_event') {
+    $body = read_json_body();
+    $device = sanitize_device(isset($body['device']) ? $body['device'] : '');
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    $events = array();
+    if (isset($body['events']) && is_array($body['events'])) {
+        $events = $body['events'];
+    } elseif (isset($body['event']) && is_array($body['event'])) {
+        $events = array($body['event']);
+    }
+
+    $written = write_player_log_events($device, $events);
+    if ($written <= 0) {
+        json_error('Nenhum evento valido para registrar', 400);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'written' => $written
+    ));
+}
+
 if ($method === 'GET' && $action === 'list_device_status') {
     $onlineWindow = isset($_GET['online_window']) ? (int)$_GET['online_window'] : 180;
     if ($onlineWindow <= 0) {
@@ -854,6 +1270,18 @@ if ($method === 'GET' && $action === 'list_device_status') {
         'online_window' => $onlineWindow,
         'server_time_unix' => $now,
         'devices' => $rows
+    ));
+}
+
+if ($method === 'GET' && $action === 'list_player_logs') {
+    $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+    $severities = normalize_log_severities(isset($_GET['severity']) ? $_GET['severity'] : 'warn,error');
+
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'logs' => read_recent_player_logs($device, $limit, $severities)
     ));
 }
 

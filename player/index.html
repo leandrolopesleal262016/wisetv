@@ -3,10 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="wisetv-build" content="2026-05-04-player-resilience-1" />
+  <meta name="wisetv-build" content="2026-05-06-player-logging-1" />
   <title>Wise360 Player</title>
   <style>
-    html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+    html, body {
+      margin:0;
+      height:100%;
+      background: #000 url("../fundo_piracast_cyberpunk.png") center center / cover no-repeat fixed;
+      overflow:hidden;
+    }
     #img, #vid, #emb, #yt { width:100%; height:100%; object-fit:contain; display:none; border:0; }
     #status {
       position: fixed;
@@ -34,16 +39,25 @@
   <div id="status" title="Inicializando"></div>
 
   <script>
-    const buildTag = "2026-05-04-player-resilience-1";
+    const buildTag = "2026-05-06-player-logging-1";
     const params = new URLSearchParams(location.search);
     const device = params.get("device") || "tv01";
     const playlistBase = new URL("playlist.php", window.location.href);
+    const playerLogUrl = new URL("admin_api.php?action=player_event", window.location.href).toString();
     const appBase = new URL("../", window.location.href);
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
     const mediaCacheName = "wisetv-player-media-v3";
     const playlistStorageKey = `wisetv-player-playlist-${device}`;
     const maxPrefetchItems = 3;
     const heartbeatIntervalMs = 15000;
+    const logFlushIntervalMs = 4000;
+    const maxLogBatchSize = 12;
+    const maxQueuedLogs = 120;
+    const maxVideoRecoveryAttempts = 2;
+    const videoStartWatchdogMs = 15000;
+    const videoWaitingWatchdogMs = 20000;
+    const videoStalledWatchdogMs = 8000;
+    const playerSessionId = `${device}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const img = document.getElementById("img");
     const vid = document.getElementById("vid");
@@ -66,6 +80,16 @@
     let playlistLoadInFlight = false;
     let pendingPlaylistReload = false;
     let heartbeatInFlight = false;
+    let currentItem = null;
+    let currentItemIndex = -1;
+    let currentPlaybackToken = 0;
+    let currentVideoRecoveryAttempts = 0;
+    let currentVideoStartedPlaying = false;
+    let currentVideoWaitLogged = false;
+    let logQueue = [];
+    let logFlushTimer = null;
+    let logFlushInFlight = false;
+    const recentLogKeys = new Map();
     function setStatus(state, label) {
       if (!state) return;
       if (state !== lastState) {
@@ -99,6 +123,183 @@
       emb.removeAttribute("src");
       if (ytPlayer && ytApiReady) {
         try { ytPlayer.stopVideo(); } catch (e) {}
+      }
+    }
+
+    function mediaNameFromUrl(rawUrl) {
+      const value = String(rawUrl || "").trim();
+      if (!value) return "";
+      try {
+        const parsed = new URL(value, window.location.href);
+        const filename = parsed.pathname.split("/").pop() || "";
+        return decodeURIComponent(filename);
+      } catch (e) {
+        const filename = value.split("/").pop().split("?")[0];
+        try {
+          return decodeURIComponent(filename);
+        } catch (decodeError) {
+          return filename;
+        }
+      }
+    }
+
+    function getVideoErrorDetails() {
+      const error = vid.error;
+      if (!error) {
+        return { error_code: 0, error_message: "" };
+      }
+
+      const codeMap = {
+        1: "MEDIA_ERR_ABORTED",
+        2: "MEDIA_ERR_NETWORK",
+        3: "MEDIA_ERR_DECODE",
+        4: "MEDIA_ERR_SRC_NOT_SUPPORTED"
+      };
+
+      return {
+        error_code: Number(error.code || 0),
+        error_message: codeMap[error.code] || "MEDIA_ERR_UNKNOWN"
+      };
+    }
+
+    function isCurrentPlayback(token) {
+      return token === currentPlaybackToken;
+    }
+
+    function rememberRecentLog(key, suppressMs) {
+      if (!key || !suppressMs || suppressMs <= 0) return false;
+      const now = Date.now();
+      const previous = recentLogKeys.get(key) || 0;
+      if ((now - previous) < suppressMs) {
+        return true;
+      }
+      recentLogKeys.set(key, now);
+      if (recentLogKeys.size > 120) {
+        const oldestKey = recentLogKeys.keys().next().value;
+        if (oldestKey) recentLogKeys.delete(oldestKey);
+      }
+      return false;
+    }
+
+    function buildPlaybackSnapshot(overrides = {}) {
+      const item = overrides.item || currentItem || null;
+      const mediaUrl = item && item.url ? item.url : "";
+      const mediaType = item && item.type ? item.type : "";
+      const durationValue = Number.isFinite(vid.duration) ? Number(vid.duration.toFixed(3)) : Number(item && item.duration ? item.duration : 0);
+      const currentTimeValue = Number.isFinite(vid.currentTime) ? Number(vid.currentTime.toFixed(3)) : 0;
+
+      return {
+        device,
+        build: buildTag,
+        session_id: playerSessionId,
+        playlist_version: currentPlaylistVersion || "",
+        media_name: mediaNameFromUrl(mediaUrl),
+        media_type: mediaType,
+        url: mediaUrl,
+        current_src: vid.currentSrc || "",
+        item_index: Number.isInteger(currentItemIndex) ? currentItemIndex : -1,
+        current_time: currentTimeValue,
+        duration: durationValue > 0 ? durationValue : 0,
+        ready_state: typeof vid.readyState === "number" ? vid.readyState : 0,
+        network_state: typeof vid.networkState === "number" ? vid.networkState : 0,
+        play_attempt: currentVideoRecoveryAttempts + 1,
+        recovery_attempt: currentVideoRecoveryAttempts,
+        paused: !!vid.paused,
+        ended: !!vid.ended,
+        muted: !!vid.muted,
+        online: navigator.onLine !== false,
+        document_visibility: document.visibilityState || ""
+      };
+    }
+
+    function scheduleLogFlush(delayMs = logFlushIntervalMs) {
+      if (logFlushTimer) {
+        clearTimeout(logFlushTimer);
+      }
+      logFlushTimer = setTimeout(() => {
+        logFlushTimer = null;
+        flushPlayerLogs();
+      }, delayMs);
+    }
+
+    async function flushPlayerLogs(options = {}) {
+      const force = options.force === true;
+      if (logFlushInFlight || !logQueue.length) {
+        return;
+      }
+
+      const batchSize = force ? logQueue.length : Math.min(logQueue.length, maxLogBatchSize);
+      const batch = logQueue.splice(0, batchSize);
+      logFlushInFlight = true;
+      try {
+        const response = await fetch(playerLogUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device, events: batch }),
+          keepalive: force
+        });
+        if (!response.ok) {
+          throw new Error(`Log HTTP ${response.status}`);
+        }
+      } catch (e) {
+        logQueue = batch.concat(logQueue).slice(-maxQueuedLogs);
+      } finally {
+        logFlushInFlight = false;
+        if (logQueue.length) {
+          scheduleLogFlush(force ? 500 : logFlushIntervalMs);
+        }
+      }
+    }
+
+    function flushPlayerLogsWithBeacon() {
+      if (!logQueue.length) return;
+
+      const payload = JSON.stringify({
+        device,
+        events: logQueue.splice(0, logQueue.length)
+      });
+
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        const accepted = navigator.sendBeacon(playerLogUrl, blob);
+        if (accepted) {
+          return;
+        }
+      }
+
+      fetch(playerLogUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true
+      }).catch(() => {});
+    }
+
+    function queuePlayerLog(type, severity = "info", details = {}, options = {}) {
+      const detailCopy = Object.assign({}, details || {});
+      const dedupeSuffix = detailCopy.reason || detailCopy.message || detailCopy.media_name || "";
+      const itemUrl = detailCopy.url || (currentItem && currentItem.url) || "";
+      const dedupeKey = options.dedupeKey || `${type}|${itemUrl}|${dedupeSuffix}`;
+      if (rememberRecentLog(dedupeKey, options.suppressMs || 0)) {
+        return;
+      }
+
+      delete detailCopy.item;
+      const payload = Object.assign(buildPlaybackSnapshot(details), detailCopy, {
+        type,
+        severity,
+        timestamp_unix: Math.floor(Date.now() / 1000)
+      });
+
+      logQueue.push(payload);
+      if (logQueue.length > maxQueuedLogs) {
+        logQueue = logQueue.slice(-maxQueuedLogs);
+      }
+
+      if (severity === "error" || logQueue.length >= maxLogBatchSize || options.flushImmediately) {
+        flushPlayerLogs({ force: false });
+      } else {
+        scheduleLogFlush();
       }
     }
 
@@ -226,6 +427,12 @@
     async function playYoutubeUntilEnd(embedUrl) {
       const videoId = extractYoutubeId(embedUrl);
       if (!videoId) {
+        queuePlayerLog("youtube_invalid_url", "warn", {
+          reason: "invalid_youtube_id",
+          message: "Nao foi possivel extrair o ID do video do YouTube",
+          media_type: "youtube",
+          url: embedUrl
+        }, { suppressMs: 15000 });
         timer = setTimeout(next, 500);
         return;
       }
@@ -254,6 +461,12 @@
               }
             },
             onError: () => {
+              queuePlayerLog("youtube_error", "warn", {
+                reason: "youtube_player_error",
+                message: "Player do YouTube retornou erro",
+                media_type: "youtube",
+                url: embedUrl
+              }, { suppressMs: 10000 });
               timer = setTimeout(next, 500);
             }
           }
@@ -262,6 +475,12 @@
         try {
           ytPlayer.loadVideoById(videoId);
         } catch (e) {
+          queuePlayerLog("youtube_load_failed", "warn", {
+            reason: "youtube_load_exception",
+            message: e && e.message ? e.message : "Falha ao carregar video do YouTube",
+            media_type: "youtube",
+            url: embedUrl
+          }, { suppressMs: 10000 });
           timer = setTimeout(next, 500);
         }
       }
@@ -279,11 +498,18 @@
       timer = setTimeout(next, delayMs);
     }
 
-    function schedulePlaybackWatchdog(label, delayMs = 15000) {
+    function schedulePlaybackWatchdog(label, delayMs = 15000, reason = "video_watchdog_timeout") {
+      const token = currentPlaybackToken;
       if (playbackWatchdog) clearTimeout(playbackWatchdog);
       playbackWatchdog = setTimeout(() => {
+        if (!isCurrentPlayback(token) || !currentItem || currentItem.type !== "video") return;
         setStatus("cache", label || "Falha ao reproduzir");
-        next();
+        queuePlayerLog("video_watchdog_timeout", "error", {
+          reason,
+          message: label || "Falha ao reproduzir video",
+          watchdog_label: label || ""
+        }, { suppressMs: 4000 });
+        attemptVideoRecovery(reason, { watchdogLabel: label || "" });
       }, delayMs);
     }
 
@@ -291,6 +517,216 @@
       if (playbackWatchdog) {
         clearTimeout(playbackWatchdog);
         playbackWatchdog = null;
+      }
+    }
+
+    function buildPlaybackUrl(mediaUrl) {
+      if (!mediaUrl) return "";
+      if (currentVideoRecoveryAttempts <= 0) return mediaUrl;
+
+      try {
+        const parsed = new URL(mediaUrl, window.location.href);
+        parsed.searchParams.set("retry", String(currentVideoRecoveryAttempts));
+        return parsed.toString();
+      } catch (e) {
+        return mediaUrl;
+      }
+    }
+
+    async function removeMediaFromCache(mediaUrl) {
+      if (!("caches" in window) || !mediaUrl) return false;
+
+      try {
+        const cache = await caches.open(mediaCacheName);
+        const target = new URL(mediaUrl, window.location.href);
+        const requests = await cache.keys();
+        let removed = false;
+
+        for (const request of requests) {
+          try {
+            const requestUrl = new URL(request.url, window.location.href);
+            if (requestUrl.pathname === target.pathname) {
+              removed = (await cache.delete(request)) || removed;
+            }
+          } catch (e) {
+          }
+        }
+
+        return removed;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function setCurrentItem(item, itemIndex) {
+      currentItem = item;
+      currentItemIndex = itemIndex;
+      currentVideoRecoveryAttempts = 0;
+      currentVideoStartedPlaying = false;
+      currentVideoWaitLogged = false;
+      currentPlaybackToken += 1;
+    }
+
+    async function attemptVideoRecovery(reason, options = {}) {
+      const token = currentPlaybackToken;
+      if (!isCurrentPlayback(token) || !currentItem || currentItem.type !== "video") {
+        return;
+      }
+
+      if (currentVideoRecoveryAttempts >= maxVideoRecoveryAttempts) {
+        queuePlayerLog("video_skipped", "error", {
+          reason,
+          message: "Video pulado apos falhas consecutivas",
+          watchdog_label: options.watchdogLabel || ""
+        }, { suppressMs: 3000, flushImmediately: true });
+        scheduleNext(350);
+        return;
+      }
+
+      currentVideoRecoveryAttempts += 1;
+      const recoveryAttempt = currentVideoRecoveryAttempts;
+      let cacheReset = false;
+
+      if (recoveryAttempt >= maxVideoRecoveryAttempts) {
+        cacheReset = await removeMediaFromCache(currentItem.url);
+        if (cacheReset) {
+          queuePlayerLog("video_cache_reset", "warn", {
+            reason,
+            message: "Cache local removido antes da ultima tentativa",
+            cache_reset: true
+          }, { suppressMs: 10000 });
+        }
+      }
+
+      if (!isCurrentPlayback(token)) {
+        return;
+      }
+
+      setStatus("cache", `Recuperando video (${recoveryAttempt}/${maxVideoRecoveryAttempts})`);
+      queuePlayerLog("video_recovery_attempt", "warn", {
+        reason,
+        message: `Tentativa ${recoveryAttempt} de ${maxVideoRecoveryAttempts}`,
+        cache_reset: cacheReset,
+        watchdog_label: options.watchdogLabel || ""
+      }, { suppressMs: 1000 });
+
+      stopAll();
+      startVideoPlayback(currentItem, { recoveryReason: reason, cacheReset });
+    }
+
+    function startVideoPlayback(item, options = {}) {
+      const token = currentPlaybackToken;
+      const isRecovery = currentVideoRecoveryAttempts > 0;
+      show("video");
+      vid.preload = "auto";
+      vid.loop = false;
+      vid.autoplay = true;
+      vid.muted = false;
+      currentVideoWaitLogged = false;
+
+      vid.onerror = () => {
+        if (!isCurrentPlayback(token)) return;
+        queuePlayerLog("video_error", "error", Object.assign({
+          reason: "media_error",
+          message: "Elemento de video reportou erro"
+        }, getVideoErrorDetails()), { suppressMs: 3000 });
+        attemptVideoRecovery("media_error");
+      };
+
+      vid.onstalled = () => {
+        if (!isCurrentPlayback(token)) return;
+        queuePlayerLog("video_stalled", "warn", {
+          reason: "stalled",
+          message: "Video parou de receber dados"
+        }, { suppressMs: 8000 });
+        schedulePlaybackWatchdog("Video travado", videoStalledWatchdogMs, "stalled_timeout");
+      };
+
+      vid.onabort = () => {
+        if (!isCurrentPlayback(token)) return;
+        queuePlayerLog("video_abort", "warn", {
+          reason: "abort",
+          message: "Carregamento do video foi abortado"
+        }, { suppressMs: 5000 });
+        attemptVideoRecovery("abort");
+      };
+
+      vid.onwaiting = () => {
+        if (!isCurrentPlayback(token)) return;
+        if (!currentVideoWaitLogged) {
+          currentVideoWaitLogged = true;
+          queuePlayerLog("video_waiting", "warn", {
+            reason: "waiting",
+            message: "Video entrou em espera aguardando dados"
+          }, { suppressMs: 12000 });
+        }
+        schedulePlaybackWatchdog("Video sem resposta", videoWaitingWatchdogMs, "waiting_timeout");
+      };
+
+      vid.oncanplay = () => {
+        if (!isCurrentPlayback(token)) return;
+        clearPlaybackWatchdog();
+      };
+
+      vid.onloadeddata = () => {
+        if (!isCurrentPlayback(token)) return;
+        clearPlaybackWatchdog();
+      };
+
+      vid.onplaying = () => {
+        if (!isCurrentPlayback(token)) return;
+        clearPlaybackWatchdog();
+        currentVideoWaitLogged = false;
+        if (!currentVideoStartedPlaying) {
+          currentVideoStartedPlaying = true;
+          if (isRecovery) {
+            queuePlayerLog("video_recovered", "warn", {
+              reason: options.recoveryReason || "recovered",
+              message: "Video voltou a reproduzir apos retry",
+              cache_reset: !!options.cacheReset
+            }, { suppressMs: 4000 });
+          }
+        }
+      };
+
+      vid.src = buildPlaybackUrl(item.url);
+      vid.load();
+      schedulePlaybackWatchdog("Falha ao iniciar video", videoStartWatchdogMs, "start_timeout");
+
+      const playPromise = vid.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch((error) => {
+          if (!isCurrentPlayback(token)) return;
+          queuePlayerLog("video_autoplay_retry", "warn", {
+            reason: "autoplay_rejected",
+            message: error && error.message ? error.message : "Falha ao iniciar com audio",
+            autoplay_muted: true
+          }, { suppressMs: 5000 });
+          vid.muted = true;
+
+          const mutedPlayPromise = vid.play();
+          if (mutedPlayPromise && typeof mutedPlayPromise.catch === "function") {
+            mutedPlayPromise.catch((mutedError) => {
+              if (!isCurrentPlayback(token)) return;
+              queuePlayerLog("video_play_failed", "error", {
+                reason: "autoplay_failed",
+                message: mutedError && mutedError.message ? mutedError.message : "Nao foi possivel iniciar o video",
+                autoplay_muted: true
+              }, { suppressMs: 3000, flushImmediately: true });
+              attemptVideoRecovery("autoplay_failed");
+            });
+          }
+        });
+      }
+
+      if (item.duration && item.duration > 0) {
+        timer = setTimeout(() => {
+          if (isCurrentPlayback(token)) next();
+        }, item.duration * 1000);
+      } else {
+        vid.onended = () => {
+          if (isCurrentPlayback(token)) next();
+        };
       }
     }
 
@@ -353,13 +789,19 @@
       if (!items.length) return;
       stopAll();
 
-      const item = items[idx % items.length];
+      const itemIndex = idx % items.length;
+      const item = items[itemIndex];
       idx++;
+      setCurrentItem(item, itemIndex);
 
       if (item.type === "image") {
         show("image");
         img.onerror = () => {
           img.onerror = null;
+          queuePlayerLog("image_load_error", "warn", {
+            reason: "image_error",
+            message: "Nao foi possivel carregar imagem"
+          }, { suppressMs: 10000 });
           scheduleNext();
         };
         img.src = item.url;
@@ -368,31 +810,7 @@
       }
 
       if (item.type === "video") {
-        show("video");
-        vid.preload = "auto";
-        vid.onerror = () => scheduleNext();
-        vid.onstalled = () => scheduleNext(1000);
-        vid.onabort = () => scheduleNext();
-        vid.onwaiting = () => schedulePlaybackWatchdog("Video sem resposta", 20000);
-        vid.oncanplay = clearPlaybackWatchdog;
-        vid.onloadeddata = clearPlaybackWatchdog;
-        vid.src = item.url;
-        vid.loop = false;
-        vid.autoplay = true;
-        vid.muted = false;
-        schedulePlaybackWatchdog("Falha ao iniciar video");
-        vid.play().catch(() => {
-          vid.muted = true;
-          return vid.play().catch(() => {
-            scheduleNext();
-          });
-        });
-
-        if (item.duration && item.duration > 0) {
-          timer = setTimeout(next, item.duration * 1000);
-        } else {
-          vid.onended = next;
-        }
+        startVideoPlayback(item);
         return;
       }
 
@@ -513,18 +931,33 @@
           startPlaybackIfNeeded();
         }
       } catch (e) {
+        queuePlayerLog("playlist_load_failed", "warn", {
+          reason: "playlist_fetch_error",
+          message: e && e.message ? e.message : "Falha ao carregar playlist",
+          from_cache_snapshot: !!loadPlaylistSnapshot().playlist.length
+        }, { suppressMs: 60000 });
+
         const snapshot = loadPlaylistSnapshot();
         if (!items.length && snapshot.playlist.length) {
           items = snapshot.playlist;
           if (!currentPlaylistVersion && snapshot.playlistVersion) {
             currentPlaylistVersion = snapshot.playlistVersion;
           }
+          queuePlayerLog("playlist_restored_from_cache", "warn", {
+            reason: "playlist_snapshot_restore",
+            message: "Player voltou a tocar usando playlist salva localmente",
+            from_cache_snapshot: true
+          }, { suppressMs: 60000 });
           setStatus("cache", "Cache local");
           startPlaybackIfNeeded();
         } else if (!items.length) {
           stopAll();
           show("image");
           img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+          queuePlayerLog("playlist_unavailable", "error", {
+            reason: "playlist_unavailable",
+            message: "Sem playlist remota e sem snapshot local"
+          }, { suppressMs: 60000, flushImmediately: true });
           setStatus("offline", "Sem rede");
         } else {
           setStatus("cache", "Cache local");
@@ -567,10 +1000,30 @@
           await loadPlaylist({ restart: true });
         }
       } catch (e) {
+        queuePlayerLog("heartbeat_failed", "warn", {
+          reason: "heartbeat_error",
+          message: e && e.message ? e.message : "Falha no heartbeat com o servidor"
+        }, { suppressMs: 60000 });
       } finally {
         heartbeatInFlight = false;
       }
     }
+
+    window.addEventListener("pagehide", flushPlayerLogsWithBeacon);
+    window.addEventListener("beforeunload", flushPlayerLogsWithBeacon);
+    window.addEventListener("online", () => {
+      queuePlayerLog("network_online", "info", {
+        reason: "browser_online",
+        message: "Conectividade restaurada"
+      }, { suppressMs: 15000 });
+      flushPlayerLogs({ force: false });
+    });
+    window.addEventListener("offline", () => {
+      queuePlayerLog("network_offline", "warn", {
+        reason: "browser_offline",
+        message: "Navegador reportou perda de conectividade"
+      }, { suppressMs: 15000, flushImmediately: true });
+    });
 
     setInterval(sendHeartbeat, heartbeatIntervalMs);
     registerPlayerSw().finally(async () => {
