@@ -1,0 +1,36 @@
+services:
+  wisetv:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_NAME:-wisetv-app}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8081}:80"
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      WISETV_MEDIA_DIR: /srv/wisetv-data/midias
+      WISETV_ROOT_PLAYLISTS_DIR: /srv/wisetv-data/root/playlists
+      WISETV_ROOT_STATUS_DIR: /srv/wisetv-data/root/status
+      WISETV_ROOT_DEVICE_REGISTRY_FILE: /srv/wisetv-data/root/devices.json
+      WISETV_PLAYER_PLAYLISTS_DIR: /srv/wisetv-data/player/playlists
+      WISETV_PLAYER_STATUS_DIR: /srv/wisetv-data/player/status
+      WISETV_PLAYER_LOGS_DIR: /srv/wisetv-data/player/logs
+      WISETV_PLAYER_DEVICE_REGISTRY_FILE: /srv/wisetv-data/player/devices.json
+    volumes:
+      - ${APP_DATA_DIR:-./.docker-data}/midias:/srv/wisetv-data/midias
+      - ${APP_DATA_DIR:-./.docker-data}/root/playlists:/srv/wisetv-data/root/playlists
+      - ${APP_DATA_DIR:-./.docker-data}/root/status:/srv/wisetv-data/root/status
+      - ${APP_DATA_DIR:-./.docker-data}/root/devices.json:/srv/wisetv-data/root/devices.json
+      - ${APP_DATA_DIR:-./.docker-data}/player/playlists:/srv/wisetv-data/player/playlists
+      - ${APP_DATA_DIR:-./.docker-data}/player/status:/srv/wisetv-data/player/status
+      - ${APP_DATA_DIR:-./.docker-data}/player/logs:/srv/wisetv-data/player/logs
+      - ${APP_DATA_DIR:-./.docker-data}/player/devices.json:/srv/wisetv-data/player/devices.json
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - php -r 'exit(@file_get_contents("http://127.0.0.1/index.php") === false ? 1 : 0);'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

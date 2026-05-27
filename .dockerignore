@@ -1,0 +1,8 @@
+.git
+.gitignore
+.env
+.docker-data
+php-server-error.log
+player/logs
+Thumbs.db
+.DS_Store

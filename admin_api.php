@@ -13,17 +13,28 @@ header('Pragma: no-cache');
 header('Expires: 0');
 header('X-WiseTV-Build: ' . WISETV_BUILD);
 
+function env_config_path($name, $defaultPath)
+{
+    $value = getenv($name);
+    if (!is_string($value)) {
+        return $defaultPath;
+    }
+
+    $value = trim($value);
+    return $value !== '' ? $value : $defaultPath;
+}
+
 if (!defined('PLAYLISTS_DIR')) {
-    define('PLAYLISTS_DIR', __DIR__ . '/playlists');
+    define('PLAYLISTS_DIR', env_config_path('WISETV_ROOT_PLAYLISTS_DIR', __DIR__ . '/playlists'));
 }
 if (!defined('MIDIAS_DIR')) {
-    define('MIDIAS_DIR', dirname(__DIR__) . '/midias');
+    define('MIDIAS_DIR', env_config_path('WISETV_MEDIA_DIR', dirname(__DIR__) . '/midias'));
 }
 if (!defined('STATUS_DIR')) {
-    define('STATUS_DIR', __DIR__ . '/status');
+    define('STATUS_DIR', env_config_path('WISETV_ROOT_STATUS_DIR', __DIR__ . '/status'));
 }
 if (!defined('DEVICE_REGISTRY_FILE')) {
-    define('DEVICE_REGISTRY_FILE', __DIR__ . '/devices.json');
+    define('DEVICE_REGISTRY_FILE', env_config_path('WISETV_ROOT_DEVICE_REGISTRY_FILE', __DIR__ . '/devices.json'));
 }
 if (!defined('MAX_UPLOAD_BYTES')) {
     define('MAX_UPLOAD_BYTES', 200 * 1024 * 1024);

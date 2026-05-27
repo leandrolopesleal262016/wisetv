@@ -9,6 +9,24 @@ header('Pragma: no-cache');
 header('Expires: 0');
 header('X-WiseTV-Build: ' . WISETV_BUILD);
 
+function env_config_path($name, $defaultPath)
+{
+  $value = getenv($name);
+  if (!is_string($value)) {
+    return $defaultPath;
+  }
+
+  $value = trim($value);
+  return $value !== '' ? $value : $defaultPath;
+}
+
+if (!defined('PLAYLISTS_DIR')) {
+  define('PLAYLISTS_DIR', env_config_path('WISETV_PLAYER_PLAYLISTS_DIR', __DIR__ . '/playlists'));
+}
+if (!defined('STATUS_DIR')) {
+  define('STATUS_DIR', env_config_path('WISETV_PLAYER_STATUS_DIR', __DIR__ . '/status'));
+}
+
 function json_flags()
 {
   $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
@@ -102,16 +120,16 @@ function normalize_playlist_payload($payload)
 }
 
 $device = preg_replace('/[^a-zA-Z0-9_-]/', '', $_GET['device'] ?? 'tv01');
-$path = __DIR__ . "/playlists/{$device}.json";
+$path = PLAYLISTS_DIR . "/{$device}.json";
 
 if (!file_exists($path)) {
-  $path = __DIR__ . "/playlists/tv01.json"; // fallback
+  $path = PLAYLISTS_DIR . "/tv01.json"; // fallback
 }
 
 // Fallback de presenca online: toda vez que a TV pedir playlist, atualiza last_seen.
 $statusCandidates = array(
-  __DIR__ . "/status",
-  __DIR__ . "/playlists/status"
+  STATUS_DIR,
+  PLAYLISTS_DIR . "/status"
 );
 $statusDir = null;
 foreach ($statusCandidates as $dir) {
