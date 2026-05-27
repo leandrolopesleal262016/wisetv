@@ -12,7 +12,7 @@
 
 1. Clone o repositório em `/srv/wisetv/app`.
 2. Copie `.env.example` para `.env`.
-3. Ajuste `APP_PORT` e `APP_DATA_DIR=/srv/wisetv/data`.
+3. Ajuste `APP_PORT`, `APP_DATA_DIR=/srv/wisetv/data` e `TRAEFIK_HOST=tv.seudominio.com`.
 4. Rode `./deploy/bootstrap.sh`.
 5. Rode `docker compose up -d --build`.
 

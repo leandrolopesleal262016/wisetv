@@ -7,6 +7,13 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8081}:80"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wisetv.rule=Host(`${TRAEFIK_HOST}`)
+      - traefik.http.routers.wisetv.entrypoints=websecure
+      - traefik.http.routers.wisetv.tls=true
+      - traefik.http.routers.wisetv.tls.certresolver=letsencrypt
+      - traefik.http.services.wisetv.loadbalancer.server.port=80
     environment:
       TZ: ${TZ:-America/Sao_Paulo}
       WISETV_MEDIA_DIR: /srv/wisetv-data/midias
