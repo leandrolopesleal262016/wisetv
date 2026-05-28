@@ -2,6 +2,12 @@
 .gitignore
 .env
 .docker-data
+midias
+playlists
+status
+player/playlists
+player/status
+player/devices.json
 php-server-error.log
 player/logs
 Thumbs.db

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SEED_DIR="$REPO_DIR/seed"
 
 if [ -f "$REPO_DIR/.env" ]; then
   set -a
@@ -48,20 +49,15 @@ seed_file_if_missing() {
 
 mkdir -p \
   "$DATA_DIR/midias" \
-  "$DATA_DIR/root/playlists" \
-  "$DATA_DIR/root/status" \
   "$DATA_DIR/player/playlists" \
   "$DATA_DIR/player/status" \
   "$DATA_DIR/player/logs"
 
-seed_dir_if_empty "$REPO_DIR/midias" "$DATA_DIR/midias"
-seed_dir_if_empty "$REPO_DIR/playlists" "$DATA_DIR/root/playlists"
-seed_dir_if_empty "$REPO_DIR/status" "$DATA_DIR/root/status"
-seed_dir_if_empty "$REPO_DIR/player/playlists" "$DATA_DIR/player/playlists"
-seed_dir_if_empty "$REPO_DIR/player/status" "$DATA_DIR/player/status"
+seed_dir_if_empty "$SEED_DIR/midias" "$DATA_DIR/midias"
+seed_dir_if_empty "$SEED_DIR/player/playlists" "$DATA_DIR/player/playlists"
+seed_dir_if_empty "$SEED_DIR/player/status" "$DATA_DIR/player/status"
 
-seed_file_if_missing "$REPO_DIR/devices.json" "$DATA_DIR/root/devices.json" '{"devices":{}}'
-seed_file_if_missing "$REPO_DIR/player/devices.json" "$DATA_DIR/player/devices.json" '{"devices":{}}'
+seed_file_if_missing "$SEED_DIR/player/devices.json" "$DATA_DIR/player/devices.json" '{"devices":{}}'
 
 if command -v chown >/dev/null 2>&1; then
   chown -R 33:33 "$DATA_DIR"

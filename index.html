@@ -1,422 +1,79 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Wise360 Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=./player/" />
+  <title>WiseTV Player</title>
   <style>
-    html, body { margin:0; height:100%; background:#000; overflow:hidden; }
-    #img, #vid, #emb, #yt { width:100%; height:100%; object-fit:contain; display:none; border:0; }
-    #status {
-      position: fixed;
-      left: 8px;
-      bottom: 8px;
-      z-index: 9999;
-      width: 12px;
-      height: 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.35);
-      background: #9aa0a6;
-      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
-      pointer-events: none;
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --text: #1a1d2a;
+      --muted: #6c7285;
+      --primary: #1845d8;
+      --line: #e2e7f5;
+      --radius: 14px;
+      --shadow: 0 10px 35px rgba(14, 20, 45, 0.1);
     }
-    #status.online { background: #28c76f; }
-    #status.cache { background: #f5b700; }
-    #status.offline { background: #ea5455; }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at top left, #eaf0ff 0%, var(--bg) 50%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(520px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.4rem;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--primary);
+      font-weight: 600;
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
-  <img id="img" alt="">
-  <video id="vid" playsinline></video>
-  <iframe id="emb" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="origin-when-cross-origin"></iframe>
-  <div id="yt"></div>
-  <div id="status" title="Inicializando"></div>
+  <main class="card">
+    <h1>Redirecionando para o player atual</h1>
+    <p>O WiseTV agora usa o player em <code>/player/</code>.</p>
+    <p>Se o redirecionamento nao acontecer automaticamente, abra <a id="playerLink" href="./player/">o player atual</a>.</p>
+  </main>
 
   <script>
-    const params = new URLSearchParams(location.search);
-    const device = params.get("device") || "tv01";
-    const playlistBase = new URL("playlist.php", window.location.href);
-    const appBase = new URL("../", window.location.href);
-    const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
-    const mediaCacheName = "wisetv-player-media-v1";
-
-    const img = document.getElementById("img");
-    const vid = document.getElementById("vid");
-    const emb = document.getElementById("emb");
-    const yt = document.getElementById("yt");
-    const statusEl = document.getElementById("status");
-
-    let items = [];
-    let idx = 0;
-    let timer = null;
-    let started = false;
-    let lastState = "";
-    let ytApiLoading = false;
-    let ytApiReady = false;
-    let ytPlayer = null;
-    let pendingYoutubeId = "";
-    function setStatus(state, label) {
-      if (!state) return;
-      if (state !== lastState) {
-        statusEl.classList.remove("online", "cache", "offline");
-        statusEl.classList.add(state);
-        lastState = state;
-      }
-      statusEl.title = label || state;
-    }
-
-    function show(type) {
-      img.style.display = type === "image" ? "block" : "none";
-      vid.style.display = type === "video" ? "block" : "none";
-      emb.style.display = type === "embed" ? "block" : "none";
-      yt.style.display = type === "youtube" ? "block" : "none";
-    }
-
-    function stopAll() {
-      if (timer) { clearTimeout(timer); timer = null; }
-      vid.pause();
-      vid.onended = null;
-      vid.removeAttribute("src");
-      vid.load();
-      emb.removeAttribute("src");
-      if (ytPlayer && ytApiReady) {
-        try { ytPlayer.stopVideo(); } catch (e) {}
-      }
-    }
-
-    function withAppBase(pathFromRoot) {
-      return `${appBasePath}${pathFromRoot}`.replace(/\/\/+/g, "/");
-    }
-
-    function rewriteHostedMediaPath(rawUrl) {
-      const value = String(rawUrl || "").trim();
-      if (!value) return "";
-
-      try {
-        const parsed = new URL(value, window.location.href);
-        const path = parsed.pathname || "";
-        if (path.includes("/midias/")) {
-          const filename = path.split("/").pop();
-          return filename ? withAppBase(`/midias/${decodeURIComponent(filename)}`) : value;
-        }
-      } catch (e) {
-      }
-
-      if (value.includes("/midias/")) {
-        const filename = value.split("/").pop().split("?")[0];
-        return filename ? withAppBase(`/midias/${decodeURIComponent(filename)}`) : value;
-      }
-
-      return value;
-    }
-
-    function normalizeMediaUrl(rawUrl) {
-      const value = String(rawUrl || "").trim();
-      if (!value) return "";
-      if (/^(https?:|data:|blob:)/i.test(value)) return value;
-      if (value.includes("/midias/")) return rewriteHostedMediaPath(value);
-      if (value.startsWith("/midias/")) return withAppBase(value);
-      if (value.startsWith("midias/")) return withAppBase("/" + value);
-      if (value.startsWith("/")) return value;
-      return new URL(value, window.location.href).toString();
-    }
-
-    function normalizeEmbedUrl(rawUrl) {
-      const buildYoutubeEmbed = (id) => {
-        return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=0&playsinline=1&rel=0&modestbranding=1&controls=1&enablejsapi=1`;
-      };
-      const value = String(rawUrl || "").trim();
-      if (!value) return "";
-      try {
-        const u = new URL(value, window.location.href);
-        const host = u.hostname.toLowerCase();
-        if (host.includes("youtu.be")) {
-          const id = u.pathname.replace("/", "").trim();
-          if (!id) return "";
-          return buildYoutubeEmbed(id);
-        }
-        if (host.includes("youtube.com")) {
-          if (u.pathname.startsWith("/watch")) {
-            const id = u.searchParams.get("v");
-            if (!id) return "";
-            return buildYoutubeEmbed(id);
-          }
-          if (u.pathname.startsWith("/live/")) {
-            const id = u.pathname.split("/").pop();
-            if (!id) return "";
-            return buildYoutubeEmbed(id);
-          }
-          if (u.pathname.startsWith("/shorts/")) {
-            const id = u.pathname.split("/").pop();
-            if (!id) return "";
-            return buildYoutubeEmbed(id);
-          }
-          if (u.pathname.startsWith("/embed/")) {
-            if (u.hostname.toLowerCase().indexOf("youtube-nocookie.com") === -1) {
-              u.hostname = "www.youtube-nocookie.com";
-            }
-            if (!u.searchParams.has("autoplay")) u.searchParams.set("autoplay", "1");
-            if (!u.searchParams.has("mute")) u.searchParams.set("mute", "0");
-            if (!u.searchParams.has("playsinline")) u.searchParams.set("playsinline", "1");
-            if (!u.searchParams.has("controls")) u.searchParams.set("controls", "1");
-            if (!u.searchParams.has("enablejsapi")) u.searchParams.set("enablejsapi", "1");
-            return u.toString();
-          }
-        }
-        return u.toString();
-      } catch (e) {
-        return "";
-      }
-    }
-
-    function extractYoutubeId(embedUrl) {
-      try {
-        const u = new URL(embedUrl);
-        if (u.pathname.indexOf("/embed/") !== -1) {
-          return u.pathname.split("/embed/")[1].split("/")[0];
-        }
-      } catch (e) {
-      }
-      return "";
-    }
-
-    function ensureYoutubeApi() {
-      if (ytApiReady) return Promise.resolve();
-      if (ytApiLoading) {
-        return new Promise((resolve) => {
-          const iv = setInterval(() => {
-            if (ytApiReady) {
-              clearInterval(iv);
-              resolve();
-            }
-          }, 100);
-        });
-      }
-      ytApiLoading = true;
-      return new Promise((resolve) => {
-        window.onYouTubeIframeAPIReady = () => {
-          ytApiReady = true;
-          resolve();
-        };
-        const script = document.createElement("script");
-        script.src = "https://www.youtube.com/iframe_api";
-        script.async = true;
-        document.head.appendChild(script);
-      });
-    }
-
-    async function playYoutubeUntilEnd(embedUrl) {
-      const videoId = extractYoutubeId(embedUrl);
-      if (!videoId) {
-        timer = setTimeout(next, 500);
-        return;
-      }
-      pendingYoutubeId = videoId;
-      await ensureYoutubeApi();
-      show("youtube");
-
-      if (!ytPlayer) {
-        ytPlayer = new YT.Player("yt", {
-          width: "100%",
-          height: "100%",
-          videoId: videoId,
-          playerVars: {
-            autoplay: 1,
-            controls: 1,
-            rel: 0,
-            playsinline: 1
-          },
-          events: {
-            onReady: (event) => {
-              event.target.playVideo();
-            },
-            onStateChange: (event) => {
-              if (event.data === YT.PlayerState.ENDED) {
-                next();
-              }
-            },
-            onError: () => {
-              timer = setTimeout(next, 500);
-            }
-          }
-        });
-      } else {
-        try {
-          ytPlayer.loadVideoById(videoId);
-        } catch (e) {
-          timer = setTimeout(next, 500);
-        }
-      }
-    }
-
-    function playlistRequestUrl() {
-      const url = new URL(playlistBase.toString());
-      url.searchParams.set("device", device);
-      url.searchParams.set("t", String(Date.now()));
-      return url.toString();
-    }
-
-    function heartbeatRequestUrl() {
-      const url = new URL("admin_api.php", window.location.href);
-      url.searchParams.set("action", "heartbeat");
-      url.searchParams.set("device", device);
-      url.searchParams.set("t", String(Date.now()));
-      return url.toString();
-    }
-
-    function next() {
-      if (!items.length) return;
-      stopAll();
-
-      const item = items[idx % items.length];
-      idx++;
-
-      if (item.type === "image") {
-        show("image");
-        img.onerror = () => {
-          img.onerror = null;
-          timer = setTimeout(next, 500);
-        };
-        img.src = item.url;
-        timer = setTimeout(next, (item.duration || 10) * 1000);
-        return;
-      }
-
-      if (item.type === "video") {
-        show("video");
-        vid.src = item.url;
-        vid.loop = false;
-        vid.autoplay = true;
-        vid.muted = false;
-        vid.play().catch(() => {
-          vid.muted = true;
-          return vid.play().catch(() => {});
-        });
-
-        if (item.duration && item.duration > 0) {
-          timer = setTimeout(next, item.duration * 1000);
-        } else {
-          vid.onended = next;
-        }
-        return;
-      }
-
-      if (item.type === "embed") {
-        show("embed");
-        emb.src = item.url;
-        timer = setTimeout(next, ((item.duration || 60) * 1000));
-        return;
-      }
-
-      if (item.type === "youtube") {
-        playYoutubeUntilEnd(item.url);
-        return;
-      }
-
-      next();
-    }
-
-    async function registerPlayerSw() {
-      if (!("serviceWorker" in navigator)) return;
-      try {
-        await navigator.serviceWorker.register(new URL("sw-player.js", window.location.href).toString());
-        setStatus("online", "Online");
-      } catch (e) {
-        setStatus("online", "Online (sem service worker)");
-      }
-    }
-
-    async function prefetchMedia(mediaList) {
-      if (!("caches" in window)) return;
-      const unique = Array.from(
-        new Set(
-          mediaList
-            .filter((item) => item.type === "image" || item.type === "video")
-            .map((item) => item.url)
-            .filter(Boolean)
-        )
-      );
-      if (!unique.length) return;
-
-      const cache = await caches.open(mediaCacheName);
-      let ok = 0;
-
-      for (const mediaUrl of unique) {
-        try {
-          const req = new Request(mediaUrl, { method: "GET" });
-          const cached = await cache.match(req);
-          if (cached) {
-            ok++;
-            continue;
-          }
-          const res = await fetch(req, { cache: "no-store" });
-          if (res.ok) {
-            await cache.put(req, res.clone());
-            ok++;
-          }
-        } catch (e) {
-        }
-      }
-
-      if (ok === unique.length && unique.length > 0) {
-        setStatus("cache", `Cache local: ${ok}/${unique.length}`);
-      }
-    }
-
-    async function loadPlaylist() {
-      try {
-        const res = await fetch(playlistRequestUrl(), { cache: "no-store" });
-        const data = await res.json();
-        const newItems = Array.isArray(data.playlist) ? data.playlist : [];
-        const normalizedItems = newItems.map((item) => {
-          const normalized = Object.assign({}, item);
-          normalized.type = normalized.type || "video";
-          normalized.url = (normalized.type === "embed" || normalized.type === "youtube")
-            ? normalizeEmbedUrl(item.url)
-            : normalizeMediaUrl(item.url);
-          if (normalized.type === "embed") {
-            const d = Number(normalized.duration || 60);
-            normalized.duration = d >= 15 ? d : 60;
-          }
-          return normalized;
-        }).filter((item) => !!item.url);
-
-        if (!normalizedItems.length && items.length) {
-          setStatus("cache", "Cache local");
-          return;
-        }
-
-        const firstLoad = !started;
-        items = normalizedItems;
-        prefetchMedia(items);
-        setStatus("online", "Online");
-        sendHeartbeat();
-        if (firstLoad) {
-          idx = 0;
-          started = true;
-          next();
-        }
-      } catch (e) {
-        if (!items.length) {
-          stopAll();
-          show("image");
-          img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
-          setStatus("offline", "Sem rede");
-        } else {
-          setStatus("cache", "Cache local");
-        }
-        timer = setTimeout(loadPlaylist, 15000);
-      }
-    }
-
-    function sendHeartbeat() {
-      fetch(heartbeatRequestUrl(), { method: "GET", cache: "no-store" }).catch(() => {});
-    }
-
-    setInterval(loadPlaylist, 300000);
-    setInterval(sendHeartbeat, 45000);
-    sendHeartbeat();
-    registerPlayerSw().finally(loadPlaylist);
+    (function redirectToCurrentPlayer() {
+      const target = new URL("./player/", window.location.href);
+      target.search = window.location.search;
+      target.hash = window.location.hash;
+      document.getElementById("playerLink").href = target.toString();
+      window.location.replace(target.toString());
+    })();
   </script>
 </body>
 </html>

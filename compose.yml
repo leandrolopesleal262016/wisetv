@@ -21,18 +21,12 @@ services:
       WISETV_FULLY_CLOUD_API_KEY: ${WISETV_FULLY_CLOUD_API_KEY:-}
       WISETV_FULLY_CLOUD_API_BASE: ${WISETV_FULLY_CLOUD_API_BASE:-https://api.fully-kiosk.com}
       WISETV_MEDIA_DIR: /var/www/html/midias
-      WISETV_ROOT_PLAYLISTS_DIR: /srv/wisetv-data/root/playlists
-      WISETV_ROOT_STATUS_DIR: /srv/wisetv-data/root/status
-      WISETV_ROOT_DEVICE_REGISTRY_FILE: /srv/wisetv-data/root/devices.json
       WISETV_PLAYER_PLAYLISTS_DIR: /srv/wisetv-data/player/playlists
       WISETV_PLAYER_STATUS_DIR: /srv/wisetv-data/player/status
       WISETV_PLAYER_LOGS_DIR: /srv/wisetv-data/player/logs
       WISETV_PLAYER_DEVICE_REGISTRY_FILE: /srv/wisetv-data/player/devices.json
     volumes:
       - ${APP_DATA_DIR:-./.docker-data}/midias:/var/www/html/midias
-      - ${APP_DATA_DIR:-./.docker-data}/root/playlists:/srv/wisetv-data/root/playlists
-      - ${APP_DATA_DIR:-./.docker-data}/root/status:/srv/wisetv-data/root/status
-      - ${APP_DATA_DIR:-./.docker-data}/root/devices.json:/srv/wisetv-data/root/devices.json
       - ${APP_DATA_DIR:-./.docker-data}/player/playlists:/srv/wisetv-data/player/playlists
       - ${APP_DATA_DIR:-./.docker-data}/player/status:/srv/wisetv-data/player/status
       - ${APP_DATA_DIR:-./.docker-data}/player/logs:/srv/wisetv-data/player/logs

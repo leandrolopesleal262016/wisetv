@@ -68,6 +68,179 @@ if (!defined('NORMALIZED_AUDIO_BITRATE')) {
 if (!defined('NORMALIZED_VIDEO_EXTENSION')) {
     define('NORMALIZED_VIDEO_EXTENSION', 'mp4');
 }
+if (!defined('WISETV_ADMIN_USERNAME')) {
+    define('WISETV_ADMIN_USERNAME', 'piracast');
+}
+if (!defined('WISETV_ADMIN_PASSWORD_HASH')) {
+    define('WISETV_ADMIN_PASSWORD_HASH', '$2y$12$UTQmjiEPBR6VyDwJIbc65OtCcq66TJNHWkS4KN8n9g8tz.ZnYzVkK');
+}
+if (!defined('WISETV_ADMIN_SESSION_NAME')) {
+    define('WISETV_ADMIN_SESSION_NAME', 'WISETVADMIN');
+}
+
+function request_is_https()
+{
+    $forwardedProto = isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? strtolower(trim((string)$_SERVER['HTTP_X_FORWARDED_PROTO'])) : '';
+    if ($forwardedProto !== '') {
+        $primaryProto = trim((string)explode(',', $forwardedProto)[0]);
+        return $primaryProto === 'https';
+    }
+
+    if (isset($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off' && (string)$_SERVER['HTTPS'] !== '') {
+        return true;
+    }
+
+    return isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443';
+}
+
+function auth_public_actions()
+{
+    return array('heartbeat', 'player_event', 'export_fully_settings');
+}
+
+function auth_session_actions()
+{
+    return array('session_status', 'login', 'logout');
+}
+
+function admin_action_requires_auth($action)
+{
+    $normalizedAction = trim((string)$action);
+    if ($normalizedAction === '') {
+        return true;
+    }
+
+    return !in_array($normalizedAction, array_merge(auth_public_actions(), auth_session_actions()), true);
+}
+
+function admin_session_should_start($action)
+{
+    $normalizedAction = trim((string)$action);
+    if ($normalizedAction === '') {
+        return true;
+    }
+
+    return admin_action_requires_auth($normalizedAction)
+        || in_array($normalizedAction, auth_session_actions(), true);
+}
+
+function start_admin_session()
+{
+    static $started = false;
+    if ($started) {
+        return;
+    }
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $started = true;
+        return;
+    }
+
+    session_name(WISETV_ADMIN_SESSION_NAME);
+    session_cache_limiter('');
+
+    $secureCookie = request_is_https();
+    if (PHP_VERSION_ID >= 70300) {
+        session_set_cookie_params(array(
+            'lifetime' => 0,
+            'path' => '/',
+            'domain' => '',
+            'secure' => $secureCookie,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ));
+    } else {
+        session_set_cookie_params(0, '/; samesite=Lax', '', $secureCookie, true);
+    }
+
+    @session_start();
+    $started = session_status() === PHP_SESSION_ACTIVE;
+}
+
+function admin_is_authenticated()
+{
+    return session_status() === PHP_SESSION_ACTIVE
+        && !empty($_SESSION['wisetv_admin_authenticated'])
+        && isset($_SESSION['wisetv_admin_username'])
+        && (string)$_SESSION['wisetv_admin_username'] === WISETV_ADMIN_USERNAME;
+}
+
+function admin_session_username()
+{
+    if (!admin_is_authenticated()) {
+        return '';
+    }
+
+    return WISETV_ADMIN_USERNAME;
+}
+
+function admin_session_payload()
+{
+    return array(
+        'authenticated' => admin_is_authenticated(),
+        'username' => admin_session_username()
+    );
+}
+
+function admin_login_matches($username, $password)
+{
+    $normalizedUsername = trim((string)$username);
+    if ($normalizedUsername !== WISETV_ADMIN_USERNAME) {
+        return false;
+    }
+
+    return password_verify((string)$password, WISETV_ADMIN_PASSWORD_HASH);
+}
+
+function admin_log_in($username)
+{
+    start_admin_session();
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        json_error('Nao foi possivel iniciar a sessao do painel.', 500);
+    }
+
+    @session_regenerate_id(true);
+    $_SESSION['wisetv_admin_authenticated'] = true;
+    $_SESSION['wisetv_admin_username'] = trim((string)$username);
+    $_SESSION['wisetv_admin_logged_at'] = gmdate('c');
+}
+
+function admin_log_out()
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    $_SESSION = array();
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            isset($params['path']) ? $params['path'] : '/',
+            isset($params['domain']) ? $params['domain'] : '',
+            !empty($params['secure']),
+            !empty($params['httponly'])
+        );
+    }
+
+    @session_destroy();
+}
+
+function require_admin_authentication()
+{
+    if (admin_is_authenticated()) {
+        return;
+    }
+
+    json_response(array(
+        'ok' => false,
+        'authenticated' => false,
+        'error' => 'Sessao expirada ou acesso nao autorizado. Entre novamente no painel.'
+    ), 401);
+}
 
 function json_flags($extraFlags = 0)
 {
@@ -977,6 +1150,9 @@ function write_player_log_events($device, $events)
     foreach ($events as $event) {
         $payload = sanitize_player_log_event($device, $event, $receivedAt);
         if (!is_array($payload)) {
+            continue;
+        }
+        if (!isset($payload['severity']) || strtolower((string)$payload['severity']) !== 'error') {
             continue;
         }
 
@@ -2160,6 +2336,44 @@ ensure_directories();
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 
+if (admin_session_should_start($action)) {
+    start_admin_session();
+}
+
+if ($method === 'GET' && $action === 'session_status') {
+    json_ok(array_merge(array('ok' => true), admin_session_payload()));
+}
+
+if ($method === 'POST' && $action === 'login') {
+    $body = read_json_body();
+    $username = isset($body['username']) ? (string)$body['username'] : '';
+    $password = isset($body['password']) ? (string)$body['password'] : '';
+
+    if (!admin_login_matches($username, $password)) {
+        json_response(array(
+            'ok' => false,
+            'authenticated' => false,
+            'error' => 'Usuario ou senha incorretos.'
+        ), 401);
+    }
+
+    admin_log_in($username);
+    json_ok(array_merge(array('ok' => true), admin_session_payload()));
+}
+
+if ($method === 'POST' && $action === 'logout') {
+    admin_log_out();
+    json_ok(array(
+        'ok' => true,
+        'authenticated' => false,
+        'username' => ''
+    ));
+}
+
+if (admin_action_requires_auth($action)) {
+    require_admin_authentication();
+}
+
 if ($method === 'GET' && $action === 'list_media') {
     $media = array();
     if (is_dir(MIDIAS_DIR)) {
@@ -2386,7 +2600,7 @@ if ($method === 'GET' && $action === 'list_device_status') {
 if ($method === 'GET' && $action === 'list_player_logs') {
     $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
-    $severities = normalize_log_severities(isset($_GET['severity']) ? $_GET['severity'] : 'warn,error');
+    $severities = normalize_log_severities(isset($_GET['severity']) ? $_GET['severity'] : 'error');
 
     json_ok(array(
         'ok' => true,

@@ -59,6 +59,25 @@
       gap: 10px;
       flex-wrap: wrap;
     }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .session-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
 
     .grid {
       display: grid;
@@ -88,6 +107,7 @@
 
     select,
     input[type="text"],
+    input[type="password"],
     input[type="number"],
     input[type="file"] {
       width: 100%;
@@ -440,6 +460,69 @@
       background: #000;
     }
 
+    body.auth-locked {
+      overflow: hidden;
+    }
+    body.auth-locked .page {
+      filter: blur(8px);
+      pointer-events: none;
+      user-select: none;
+    }
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at top, rgba(24, 69, 216, 0.16), transparent 42%),
+        rgba(7, 12, 26, 0.36);
+      backdrop-filter: blur(10px);
+    }
+    .auth-card {
+      width: min(420px, 100%);
+      background: rgba(255, 255, 255, 0.97);
+      border: 1px solid rgba(226, 231, 245, 0.96);
+      border-radius: 22px;
+      box-shadow: 0 20px 60px rgba(11, 18, 38, 0.2);
+      padding: 28px;
+    }
+    .auth-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #eaf0ff;
+      color: var(--primary);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .auth-card h2 {
+      margin: 14px 0 8px;
+      font-size: 1.5rem;
+    }
+    .auth-card p {
+      margin: 0 0 18px;
+      color: #4a5674;
+      line-height: 1.5;
+    }
+    .auth-form {
+      display: grid;
+      gap: 2px;
+    }
+    .auth-form button {
+      margin-top: 6px;
+    }
+    .auth-status {
+      min-height: 20px;
+      margin-top: 10px;
+    }
+
     .empty {
       color: var(--muted);
       padding: 16px 10px;
@@ -576,6 +659,7 @@
       .checklist-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
       select,
       input[type="text"],
+      input[type="password"],
       input[type="number"],
       input[type="file"],
       button {
@@ -602,12 +686,16 @@
     }
   </style>
 </head>
-<body>
+<body class="auth-locked">
   <main class="page">
     <section class="header">
       <div class="header-top">
         <h1>Painel WiseTV</h1>
-        <button id="installBtn" class="btn-secondary is-hidden" type="button">Instalar app</button>
+        <div class="header-actions">
+          <div id="sessionUserChip" class="session-chip is-hidden"></div>
+          <button id="logoutBtn" class="btn-secondary is-hidden" type="button">Sair</button>
+          <button id="installBtn" class="btn-secondary is-hidden" type="button">Instalar app</button>
+        </div>
       </div>
       <p>Cadastre conteudos, nomeie TVs, gerencie midias e publique a playlist.</p>
     </section>
@@ -716,9 +804,9 @@
           <label for="deviceIdInput">ID interno da TV</label>
           <input id="deviceIdInput" type="text" readonly />
 
-          <label for="deviceEndpointInput">URL para configurar no Fully Kiosk</label>
+          <label for="deviceEndpointInput">URL do player web legado (preview/fallback)</label>
           <input id="deviceEndpointInput" type="text" readonly />
-          <div class="small">Use esta URL como pagina inicial da TV no Fully Kiosk para o cliente selecionado.</div>
+          <div class="small">Use apenas em fallback legado no navegador. No fluxo atual com Fully Video Kiosk, a playlist e enviada pelo Fully Cloud.</div>
 
           <hr class="section-divider">
 
@@ -749,7 +837,7 @@
           </div>
 
           <div class="actions stack-actions" style="margin-top:14px;">
-            <button id="previewBtn" class="btn-ok" type="button">Visualizar</button>
+            <button id="previewBtn" class="btn-ok" type="button">Preview web</button>
             <button id="deleteDeviceBtn" class="btn-danger" type="button">Remover TV</button>
           </div>
 
@@ -795,6 +883,22 @@
     </section>
   </main>
 
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-eyebrow">WiseTV Admin</div>
+      <h2>Acesso ao painel</h2>
+      <p>Entre com o usuario administrador para gerenciar TVs, playlists, midias e a sincronizacao com o Fully Cloud.</p>
+      <form id="loginForm" class="auth-form">
+        <label for="loginUsernameInput">Usuario</label>
+        <input id="loginUsernameInput" type="text" value="piracast" autocomplete="username" />
+        <label for="loginPasswordInput">Senha</label>
+        <input id="loginPasswordInput" type="password" autocomplete="current-password" />
+        <button id="loginSubmitBtn" class="btn-ok" type="submit">Entrar</button>
+      </form>
+      <div id="loginStatus" class="small auth-status"></div>
+    </div>
+  </div>
+
   <div id="mediaPreviewModal" class="preview-modal is-hidden">
     <div class="preview-dialog">
       <div class="preview-bar">
@@ -811,6 +915,15 @@
     const appBase = new URL("../", window.location.href);
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
 
+    const appPage = document.querySelector(".page");
+    const authOverlay = document.getElementById("authOverlay");
+    const loginForm = document.getElementById("loginForm");
+    const loginUsernameInput = document.getElementById("loginUsernameInput");
+    const loginPasswordInput = document.getElementById("loginPasswordInput");
+    const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+    const loginStatus = document.getElementById("loginStatus");
+    const sessionUserChip = document.getElementById("sessionUserChip");
+    const logoutBtn = document.getElementById("logoutBtn");
     const deviceSelect = document.getElementById("deviceSelect");
     const sidebarPlaylistTabBtn = document.getElementById("sidebarPlaylistTabBtn");
     const sidebarSettingsTabBtn = document.getElementById("sidebarSettingsTabBtn");
@@ -915,10 +1028,65 @@
       isLoadingPlayerLogs: false,
       playlistRequestToken: 0,
       playerLogsRequestToken: 0,
-      dragFromIndex: -1
+      dragFromIndex: -1,
+      refreshTimer: null,
+      auth: {
+        authenticated: false,
+        username: "",
+        loading: false
+      }
     };
 
     let deferredInstallPrompt = null;
+
+    function setLoginStatus(message, isError = false, isPending = false) {
+      loginStatus.textContent = message || "";
+      loginStatus.className = `small auth-status ${isError ? "status-error" : (isPending ? "status-pending" : "status-ok")}`;
+    }
+
+    function setAuthLoading(isLoading) {
+      state.auth.loading = !!isLoading;
+      loginSubmitBtn.disabled = !!isLoading;
+      loginSubmitBtn.textContent = isLoading ? "Entrando..." : "Entrar";
+      loginUsernameInput.disabled = !!isLoading;
+      loginPasswordInput.disabled = !!isLoading;
+    }
+
+    function stopRefreshTimer() {
+      if (state.refreshTimer) {
+        clearInterval(state.refreshTimer);
+        state.refreshTimer = null;
+      }
+    }
+
+    function renderAuthState() {
+      const authenticated = !!state.auth.authenticated;
+      document.body.classList.toggle("auth-locked", !authenticated);
+      authOverlay.classList.toggle("is-hidden", authenticated);
+      appPage.setAttribute("aria-hidden", authenticated ? "false" : "true");
+      logoutBtn.disabled = false;
+      logoutBtn.classList.toggle("is-hidden", !authenticated);
+      sessionUserChip.classList.toggle("is-hidden", !authenticated);
+      sessionUserChip.textContent = authenticated && state.auth.username
+        ? `Logado como ${state.auth.username}`
+        : "";
+      if (authenticated) {
+        setLoginStatus("");
+      }
+    }
+
+    function handleUnauthorized(message = "Sessao expirada. Entre novamente no painel.") {
+      state.auth.authenticated = false;
+      state.auth.username = "";
+      stopRefreshTimer();
+      renderAuthState();
+      setAuthLoading(false);
+      loginPasswordInput.value = "";
+      setLoginStatus(message, true);
+      window.setTimeout(() => {
+        loginPasswordInput.focus();
+      }, 0);
+    }
 
     function setStatus(message, isError = false, isPending = false) {
       statusEl.textContent = message || "";
@@ -973,32 +1141,54 @@
       return parseApiResponse(text);
     }
 
-    async function apiGet(params) {
-      const url = `${apiBase}?${new URLSearchParams(params).toString()}&t=${Date.now()}`;
-      const res = await fetch(url, { cache: "no-store" });
+    async function requestApi(url, init = {}, options = {}) {
+      const res = await fetch(url, {
+        cache: "no-store",
+        credentials: "same-origin",
+        ...init
+      });
       const data = await readApiPayload(res);
+      if (res.status === 401) {
+        if (options.handleUnauthorized !== false) {
+          handleUnauthorized(data.error || "Sessao expirada. Entre novamente no painel.");
+        }
+        throw new Error(data.error || "Acesso nao autorizado");
+      }
       if (!res.ok || !data.ok) throw new Error(data.error || "Erro de comunicacao");
       return data;
     }
 
+    async function apiGet(params) {
+      const url = `${apiBase}?${new URLSearchParams(params).toString()}&t=${Date.now()}`;
+      return requestApi(url);
+    }
+
+    async function apiGetPublic(params) {
+      const url = `${apiBase}?${new URLSearchParams(params).toString()}&t=${Date.now()}`;
+      return requestApi(url, {}, { handleUnauthorized: false });
+    }
+
     async function apiPost(action, payload) {
       const url = `${apiBase}?action=${encodeURIComponent(action)}&t=${Date.now()}`;
-      const res = await fetch(url, {
+      return requestApi(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const data = await readApiPayload(res);
-      if (!res.ok || !data.ok) throw new Error(data.error || "Erro ao salvar");
-      return data;
+    }
+
+    async function apiPostPublic(action, payload) {
+      const url = `${apiBase}?action=${encodeURIComponent(action)}&t=${Date.now()}`;
+      return requestApi(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }, { handleUnauthorized: false });
     }
 
     async function apiPostForm(action, formData) {
       const url = `${apiBase}?action=${encodeURIComponent(action)}&t=${Date.now()}`;
-      const res = await fetch(url, { method: "POST", body: formData });
-      const data = await readApiPayload(res);
-      if (!res.ok || !data.ok) throw new Error(data.error || "Erro no upload");
-      return data;
+      return requestApi(url, { method: "POST", body: formData });
     }
 
     function withAppBase(pathFromRoot) {
@@ -1145,6 +1335,47 @@
       const value = String(inputEl && inputEl.value ? inputEl.value : "").trim();
       if (!value) return;
       window.open(value, "_blank", "noopener");
+    }
+
+    async function refreshSessionStatus() {
+      const data = await apiGetPublic({ action: "session_status" });
+      state.auth.authenticated = !!data.authenticated;
+      state.auth.username = String(data.username || "").trim();
+      renderAuthState();
+      return state.auth.authenticated;
+    }
+
+    async function submitLogin(event) {
+      event.preventDefault();
+
+      const username = loginUsernameInput.value.trim();
+      const password = loginPasswordInput.value;
+      if (!username || !password) {
+        setLoginStatus("Informe usuario e senha.", true);
+        return;
+      }
+
+      try {
+        setAuthLoading(true);
+        setLoginStatus("Validando acesso...", false, true);
+        await apiPostPublic("login", { username, password });
+        window.location.reload();
+      } catch (error) {
+        setLoginStatus(error.message || "Nao foi possivel entrar no painel.", true);
+        loginPasswordInput.select();
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+
+    async function logoutCurrentSession() {
+      try {
+        logoutBtn.disabled = true;
+        await apiPostPublic("logout", {});
+      } catch (error) {
+      } finally {
+        window.location.reload();
+      }
     }
 
     function normalizeDeviceList(deviceIds) {
@@ -2049,6 +2280,41 @@
       state.dragFromIndex = -1;
     }
 
+    async function loadInitialPanelData() {
+      setSidebarTab("playlist");
+      renderUploadPolicyHint();
+      await loadDevices();
+      await loadDeviceStatus();
+      let mediaLoadError = "";
+      try {
+        await loadMedia();
+      } catch (error) {
+        mediaLoadError = error.message;
+        state.media = [];
+        state.selectedMediaName = "";
+        renderMediaOptions();
+      }
+
+      if (state.selectedDevice) {
+        await switchSelectedDevice(state.selectedDevice);
+      } else {
+        renderDeviceOptions();
+        renderPlaylist();
+        renderPlayerLogs();
+      }
+
+      if (mediaLoadError) {
+        setStatus(`A playlist carregou, mas a lista de midias falhou: ${mediaLoadError}`, true);
+      }
+
+      if (!state.refreshTimer) {
+        state.refreshTimer = setInterval(() => {
+          loadDeviceStatus().catch(() => {});
+          loadPlayerLogs(state.selectedDevice, { silent: true }).catch(() => {});
+        }, 30000);
+      }
+    }
+
     async function loadDevices(preferredDevice = state.selectedDevice) {
       const data = await apiGet({ action: "list_tvs" });
       state.devices = Array.isArray(data.devices) ? data.devices : [];
@@ -2226,7 +2492,7 @@
           action: "list_player_logs",
           device,
           limit: 40,
-          severity: "warn,error"
+          severity: "error"
         });
 
         if (requestToken !== null && requestToken !== state.playerLogsRequestToken) {
@@ -2603,6 +2869,7 @@
 
       const previewUrl = new URL("index.html", window.location.href);
       previewUrl.searchParams.set("device", state.selectedDevice);
+      previewUrl.searchParams.set("preview", "1");
       window.open(previewUrl.toString(), "_blank", "noopener");
     }
 
@@ -2936,6 +3203,8 @@
         setStatus(error.message, true);
       }
     });
+    loginForm.addEventListener("submit", submitLogin);
+    logoutBtn.addEventListener("click", logoutCurrentSession);
     installBtn.addEventListener("click", installPwa);
     closeMediaPreviewBtn.addEventListener("click", closeMediaPreview);
 
@@ -3010,36 +3279,15 @@
     (async function init() {
       try {
         registerPwa();
-        setSidebarTab("playlist");
-        renderUploadPolicyHint();
-        await loadDevices();
-        await loadDeviceStatus();
-        let mediaLoadError = "";
-        try {
-          await loadMedia();
-        } catch (error) {
-          mediaLoadError = error.message;
-          state.media = [];
-          state.selectedMediaName = "";
-          renderMediaOptions();
+        renderAuthState();
+        const authenticated = await refreshSessionStatus();
+        if (!authenticated) {
+          setLoginStatus("Entre com seu usuario administrador para abrir o painel.");
+          loginPasswordInput.focus();
+          return;
         }
 
-        if (state.selectedDevice) {
-          await switchSelectedDevice(state.selectedDevice);
-        } else {
-          renderDeviceOptions();
-          renderPlaylist();
-          renderPlayerLogs();
-        }
-
-        if (mediaLoadError) {
-          setStatus(`A playlist carregou, mas a lista de midias falhou: ${mediaLoadError}`, true);
-        }
-
-        setInterval(() => {
-          loadDeviceStatus().catch(() => {});
-          loadPlayerLogs(state.selectedDevice, { silent: true }).catch(() => {});
-        }, 30000);
+        await loadInitialPanelData();
       } catch (error) {
         setStatus(error.message, true);
       }

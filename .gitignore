@@ -3,4 +3,10 @@ Thumbs.db
 .DS_Store
 .env
 .docker-data/
+midias/
+playlists/
+status/
+player/playlists/
+player/status/
+player/devices.json
 player/logs/

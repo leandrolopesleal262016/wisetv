@@ -42,13 +42,12 @@
     const buildTag = "2026-05-06-player-logging-1";
     const params = new URLSearchParams(location.search);
     const device = params.get("device") || "tv01";
+    const isPreview = params.get("preview") === "1";
     const playlistBase = new URL("playlist.php", window.location.href);
     const playerLogUrl = new URL("admin_api.php?action=player_event", window.location.href).toString();
     const appBase = new URL("../", window.location.href);
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
-    const mediaCacheName = "wisetv-player-media-v3";
     const playlistStorageKey = `wisetv-player-playlist-${device}`;
-    const maxPrefetchItems = 3;
     const heartbeatIntervalMs = 15000;
     const logFlushIntervalMs = 4000;
     const maxLogBatchSize = 12;
@@ -252,6 +251,7 @@
     }
 
     function flushPlayerLogsWithBeacon() {
+      if (isPreview) return;
       if (!logQueue.length) return;
 
       const payload = JSON.stringify({
@@ -276,6 +276,7 @@
     }
 
     function queuePlayerLog(type, severity = "info", details = {}, options = {}) {
+      if (isPreview) return;
       const detailCopy = Object.assign({}, details || {});
       const dedupeSuffix = detailCopy.reason || detailCopy.message || detailCopy.media_name || "";
       const itemUrl = detailCopy.url || (currentItem && currentItem.url) || "";
@@ -829,53 +830,6 @@
       next();
     }
 
-    async function registerPlayerSw() {
-      if (!("serviceWorker" in navigator)) return;
-      try {
-        await navigator.serviceWorker.register(new URL(`sw-player.js?v=${encodeURIComponent(buildTag)}`, window.location.href).toString());
-        setStatus("online", "Online");
-      } catch (e) {
-        setStatus("online", "Online (sem service worker)");
-      }
-    }
-
-    async function prefetchMedia(mediaList) {
-      if (!("caches" in window)) return;
-      const unique = Array.from(
-        new Set(
-          mediaList
-            .filter((item) => item.type === "image" || item.type === "video")
-            .map((item) => item.url)
-            .filter(Boolean)
-        )
-      ).slice(0, maxPrefetchItems);
-      if (!unique.length) return;
-
-      const cache = await caches.open(mediaCacheName);
-      let ok = 0;
-
-      for (const mediaUrl of unique) {
-        try {
-          const req = new Request(mediaUrl, { method: "GET" });
-          const cached = await cache.match(req);
-          if (cached) {
-            ok++;
-            continue;
-          }
-          const res = await fetch(req, { cache: "no-store" });
-          if (res.ok) {
-            await cache.put(req, res.clone());
-            ok++;
-          }
-        } catch (e) {
-        }
-      }
-
-      if (ok === unique.length && unique.length > 0) {
-        setStatus("cache", `Cache local: ${ok}/${unique.length}`);
-      }
-    }
-
     async function loadPlaylist(options = {}) {
       const shouldRestart = !!options.restart;
       const isRetry = !!options.isRetry;
@@ -922,8 +876,7 @@
 
         items = normalizedItems;
         savePlaylistSnapshot(items, currentPlaylistVersion);
-        prefetchMedia(items);
-        setStatus("online", "Online");
+        setStatus("online", isPreview ? "Preview web" : "Online");
 
         if (shouldRestart) {
           restartPlayback();
@@ -979,6 +932,7 @@
     }
 
     async function sendHeartbeat() {
+      if (isPreview) return;
       if (heartbeatInFlight) return;
       heartbeatInFlight = true;
       try {
@@ -1025,11 +979,10 @@
       }, { suppressMs: 15000, flushImmediately: true });
     });
 
-    setInterval(sendHeartbeat, heartbeatIntervalMs);
-    registerPlayerSw().finally(async () => {
-      await loadPlaylist();
-      await sendHeartbeat();
-    });
+    if (!isPreview) {
+      setInterval(sendHeartbeat, heartbeatIntervalMs);
+    }
+    loadPlaylist().then(() => sendHeartbeat());
   </script>
 </body>
 </html>
