@@ -1524,6 +1524,13 @@ function fully_cloud_start_playlist($fullyDeviceId)
     ), true, false);
 }
 
+function fully_cloud_reload_start_url($fullyDeviceId)
+{
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'loadStartUrl'
+    ), true, false);
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -2739,6 +2746,14 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         $syncStatus = 'OK';
     }
     $syncMessage = fully_cloud_response_text($response, 'Comando enviado ao Fully Cloud');
+
+    $reloadWallpaperResponse = fully_cloud_reload_start_url($entry['fully_device_id']);
+    if (!$reloadWallpaperResponse['ok'] || strcasecmp(fully_cloud_response_status($reloadWallpaperResponse), 'Error') === 0) {
+        $wallpaperWarning = fully_cloud_response_text($reloadWallpaperResponse, 'Nao foi possivel recarregar o wallpaper no Fully Cloud.');
+        if ($wallpaperWarning !== '') {
+            $syncMessage .= ' Wallpaper: ' . $wallpaperWarning;
+        }
+    }
 
     $playerStartResponse = fully_cloud_start_playlist($entry['fully_device_id']);
     if (!$playerStartResponse['ok'] || strcasecmp(fully_cloud_response_status($playerStartResponse), 'Error') === 0) {
