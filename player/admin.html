@@ -791,6 +791,12 @@
           <div class="actions stack-actions">
             <button id="syncFullyBtn" class="btn-ok" type="button">Sincronizar com Fully Cloud</button>
           </div>
+          <div class="actions" style="margin-top:10px; flex-wrap:wrap;">
+            <button id="openFullyBtn" class="btn-secondary" type="button">Abrir Fully na TV</button>
+            <button id="restartPlaylistBtn" class="btn-secondary" type="button">Reiniciar playlist</button>
+            <button id="restartFullyBtn" class="btn-secondary" type="button">Reiniciar app Fully</button>
+          </div>
+          <div class="small">Esses comandos ajudam quando a TV voltou para a home do Android ou quando voce precisa religar a playlist sem mexer no controle.</div>
           <div id="deviceFullyHint" class="small">A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.</div>
         </section>
 
@@ -975,6 +981,9 @@
     const openFullyManifestBtn = document.getElementById("openFullyManifestBtn");
     const openFullySettingsBtn = document.getElementById("openFullySettingsBtn");
     const syncFullyBtn = document.getElementById("syncFullyBtn");
+    const openFullyBtn = document.getElementById("openFullyBtn");
+    const restartPlaylistBtn = document.getElementById("restartPlaylistBtn");
+    const restartFullyBtn = document.getElementById("restartFullyBtn");
     const deviceFullyHint = document.getElementById("deviceFullyHint");
     const refreshLogsBtn = document.getElementById("refreshLogsBtn");
     const mediaPreviewModal = document.getElementById("mediaPreviewModal");
@@ -1024,6 +1033,7 @@
       saveTimer: null,
       isSaving: false,
       isSyncingFully: false,
+      fullyControlAction: "",
       isLoadingPlaylist: false,
       isLoadingPlayerLogs: false,
       playlistRequestToken: 0,
@@ -1034,6 +1044,27 @@
         authenticated: false,
         username: "",
         loading: false
+      }
+    };
+
+    const fullyControlButtons = {
+      open_fully: openFullyBtn,
+      restart_playlist: restartPlaylistBtn,
+      restart_app: restartFullyBtn
+    };
+
+    const fullyControlButtonLabels = {
+      open_fully: {
+        idle: "Abrir Fully na TV",
+        busy: "Abrindo Fully..."
+      },
+      restart_playlist: {
+        idle: "Reiniciar playlist",
+        busy: "Reiniciando playlist..."
+      },
+      restart_app: {
+        idle: "Reiniciar app Fully",
+        busy: "Reiniciando app..."
       }
     };
 
@@ -1093,9 +1124,29 @@
       statusEl.className = isError ? "status-error" : (isPending ? "status-pending" : "status-ok");
     }
 
+    function renderFullyControlButtons() {
+      Object.entries(fullyControlButtons).forEach(([action, button]) => {
+        if (!button) {
+          return;
+        }
+        const labels = fullyControlButtonLabels[action];
+        button.textContent = state.fullyControlAction === action
+          ? labels.busy
+          : labels.idle;
+      });
+    }
+
+    function setFullyControlLoading(action = "") {
+      state.fullyControlAction = action || "";
+      renderFullyControlButtons();
+      updateActionStates();
+      renderFullyCloudHint();
+    }
+
     function setFullySyncLoading(isLoading) {
       state.isSyncingFully = !!isLoading;
       syncFullyBtn.textContent = isLoading ? "Sincronizando..." : "Sincronizar com Fully Cloud";
+      renderFullyControlButtons();
       updateActionStates();
       renderFullyCloudHint();
     }
@@ -1548,6 +1599,8 @@
       const fullyEnabled = !!deviceFullyEnabledInput.checked;
       const fullyDeviceId = deviceFullyIdInput.value.trim();
       const fullySettingsReady = !!state.fullyCloud.settings_ready;
+      const fullyCommandReady = hasDevice && fullyEnabled && !!fullyDeviceId && !!state.fullyCloud.api_configured;
+      const fullyBusy = state.isSyncingFully || !!state.fullyControlAction;
       const fully = getFullyRecord();
 
       deviceFriendlyInput.disabled = !hasDevice;
@@ -1561,7 +1614,10 @@
       previewBtn.disabled = !hasDevice;
       openFullyManifestBtn.disabled = !hasDevice || !deviceFullyManifestInput.value.trim();
       openFullySettingsBtn.disabled = !hasDevice || !fullySettingsReady || !fully.settings_template_ready || !deviceFullySettingsInput.value.trim();
-      syncFullyBtn.disabled = !hasDevice || !fullyEnabled || !fullyDeviceId || !state.fullyCloud.api_configured || !fullySettingsReady || state.isSyncingFully;
+      syncFullyBtn.disabled = !fullyCommandReady || !fullySettingsReady || fullyBusy;
+      openFullyBtn.disabled = !fullyCommandReady || fullyBusy;
+      restartPlaylistBtn.disabled = !fullyCommandReady || fullyBusy;
+      restartFullyBtn.disabled = !fullyCommandReady || fullyBusy;
 
       addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
       viewMediaBtn.disabled = !hasSelectedMedia;
@@ -1841,6 +1897,14 @@
       }
       if (state.isSyncingFully && state.selectedDevice === device.id) {
         parts.push("Sincronizacao em andamento. O Fully Cloud ja recebeu o comando e a TV esta importando os settings.");
+      }
+      if (state.fullyControlAction && state.selectedDevice === device.id) {
+        const actionMessages = {
+          open_fully: "Comando manual em andamento. O WiseTV esta tentando trazer o Fully para frente nesta TV.",
+          restart_playlist: "Comando manual em andamento. O WiseTV esta tentando reiniciar a playlist nesta TV.",
+          restart_app: "Comando manual em andamento. O WiseTV esta tentando reiniciar o app Fully nesta TV."
+        };
+        parts.push(actionMessages[state.fullyControlAction] || "Comando manual do Fully em andamento nesta TV.");
       }
       if (fully.last_sync_at) {
         const statusLabel = fully.last_sync_status ? ` ${fully.last_sync_status}.` : "";
@@ -2964,7 +3028,7 @@
         setStatus("Selecione uma TV para sincronizar.", true);
         return;
       }
-      if (state.isSyncingFully) {
+      if (state.isSyncingFully || state.fullyControlAction) {
         return;
       }
 
@@ -3011,6 +3075,61 @@
         setStatus(error.message, true);
       } finally {
         setFullySyncLoading(false);
+      }
+    }
+
+    async function runSelectedFullyControl(control) {
+      if (!state.selectedDevice) {
+        setStatus("Selecione uma TV para enviar comandos ao Fully.", true);
+        return;
+      }
+      if (state.isSyncingFully || state.fullyControlAction) {
+        return;
+      }
+
+      const controlMessages = {
+        open_fully: {
+          pending: "Fully Cloud: tentando abrir o Fully nesta TV...",
+          fallback: "Fully aberto na TV."
+        },
+        restart_playlist: {
+          pending: "Fully Cloud: tentando reiniciar a playlist desta TV...",
+          fallback: "Playlist reiniciada na TV."
+        },
+        restart_app: {
+          pending: "Fully Cloud: tentando reiniciar o app Fully nesta TV...",
+          fallback: "App Fully reiniciado na TV."
+        }
+      };
+      const config = controlMessages[control];
+      if (!config) {
+        setStatus("Comando do Fully invalido.", true);
+        return;
+      }
+
+      try {
+        setFullyControlLoading(control);
+        setStatus(config.pending, false, true);
+        await persistSelectedDeviceSettings();
+
+        const result = await apiPost("fully_control_device", {
+          device: state.selectedDevice,
+          control
+        });
+
+        if (result.fully_cloud && typeof result.fully_cloud === "object") {
+          state.fullyCloud = {
+            ...state.fullyCloud,
+            ...result.fully_cloud
+          };
+        }
+
+        renderSelectedDeviceDetails();
+        setStatus(`Fully Cloud: ${result.message || config.fallback}`);
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        setFullyControlLoading("");
       }
     }
 
@@ -3186,6 +3305,9 @@
     openFullyManifestBtn.addEventListener("click", openFullyManifest);
     openFullySettingsBtn.addEventListener("click", openFullySettings);
     syncFullyBtn.addEventListener("click", syncSelectedDeviceWithFullyCloud);
+    openFullyBtn.addEventListener("click", () => runSelectedFullyControl("open_fully"));
+    restartPlaylistBtn.addEventListener("click", () => runSelectedFullyControl("restart_playlist"));
+    restartFullyBtn.addEventListener("click", () => runSelectedFullyControl("restart_app"));
     selectAllPlaylistsBtn.addEventListener("click", () => {
       setBulkTargetDevices(state.devices.map((device) => device.id));
     });

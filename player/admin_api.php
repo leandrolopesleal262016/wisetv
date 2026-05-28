@@ -1674,6 +1674,15 @@ function fully_cloud_response_text($response, $fallback = '')
     return trim((string)$fallback);
 }
 
+function fully_cloud_response_has_error($response)
+{
+    if (!is_array($response) || empty($response['ok'])) {
+        return true;
+    }
+
+    return strcasecmp(fully_cloud_response_status($response), 'Error') === 0;
+}
+
 function fully_cloud_apply_audio_preference($fullyDeviceId, $audioEnabled)
 {
     if ($audioEnabled) {
@@ -1705,6 +1714,20 @@ function fully_cloud_reload_start_url($fullyDeviceId)
     return fully_cloud_remote_request($fullyDeviceId, array(
         'cmd' => 'loadStartUrl'
     ), true, false);
+}
+
+function fully_cloud_bring_to_foreground($fullyDeviceId, $persistent = true)
+{
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'toForeground'
+    ), $persistent, false);
+}
+
+function fully_cloud_restart_app($fullyDeviceId, $persistent = false)
+{
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'restartApp'
+    ), $persistent, false);
 }
 
 function fully_cloud_set_string_setting($fullyDeviceId, $key, $value)
@@ -3028,6 +3051,93 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         'device' => build_device_payload($device, $registry, fully_cloud_status()),
         'fully_cloud' => fully_cloud_status(),
         'response' => $response['response']
+    ));
+}
+
+if ($method === 'POST' && $action === 'fully_control_device') {
+    $body = read_json_body();
+    $device = sanitize_device(isset($body['device']) ? $body['device'] : '');
+    $control = trim((string)(isset($body['control']) ? $body['control'] : ''));
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    $allowedControls = array(
+        'open_fully' => 'Abrindo o Fully na TV.',
+        'restart_playlist' => 'Reiniciando a playlist da TV.',
+        'restart_app' => 'Reiniciando o app Fully na TV.'
+    );
+    if (!isset($allowedControls[$control])) {
+        json_error('Comando do Fully invalido', 400);
+    }
+
+    $registry = load_device_registry();
+    $knownDevices = list_all_device_ids($registry);
+    if (!in_array($device, $knownDevices, true)) {
+        json_error('TV nao encontrada', 404);
+    }
+
+    $entry = normalize_registry_entry($device, $registry);
+    if (!$entry['fully_enabled']) {
+        json_error('Ative a integracao com Fully Cloud para esta TV antes de usar comandos remotos.', 409);
+    }
+    if ($entry['fully_device_id'] === '') {
+        json_error('Preencha o Device ID do Fully Cloud para esta TV antes de usar comandos remotos.', 409);
+    }
+
+    $fullyCloud = fully_cloud_status();
+    if (!$fullyCloud['api_configured']) {
+        json_error('Configure WISETV_FULLY_CLOUD_API_EMAIL e WISETV_FULLY_CLOUD_API_KEY antes de usar comandos remotos do Fully Cloud.', 409);
+    }
+
+    $message = $allowedControls[$control];
+    $response = null;
+    $warnings = array();
+
+    if ($control === 'open_fully') {
+        $response = fully_cloud_bring_to_foreground($entry['fully_device_id'], true);
+        if (fully_cloud_response_has_error($response)) {
+            json_error(fully_cloud_response_text($response, 'Nao foi possivel trazer o Fully para frente nesta TV.'), 502);
+        }
+
+        $reloadResponse = fully_cloud_reload_start_url($entry['fully_device_id']);
+        if (fully_cloud_response_has_error($reloadResponse)) {
+            $warnings[] = fully_cloud_response_text($reloadResponse, 'Nao foi possivel recarregar a Start URL do Fully.');
+        }
+
+        $playerResponse = fully_cloud_start_playlist($entry['fully_device_id']);
+        if (fully_cloud_response_has_error($playerResponse)) {
+            $warnings[] = fully_cloud_response_text($playerResponse, 'Nao foi possivel reiniciar a playlist do Fully.');
+        }
+
+        $message = fully_cloud_response_text($response, 'Fully trazido para frente na TV.');
+    } elseif ($control === 'restart_playlist') {
+        $response = fully_cloud_start_playlist($entry['fully_device_id']);
+        if (fully_cloud_response_has_error($response)) {
+            json_error(fully_cloud_response_text($response, 'Nao foi possivel reiniciar a playlist desta TV.'), 502);
+        }
+
+        $message = fully_cloud_response_text($response, 'Playlist reiniciada na TV.');
+    } else {
+        $response = fully_cloud_restart_app($entry['fully_device_id'], false);
+        if (fully_cloud_response_has_error($response)) {
+            json_error(fully_cloud_response_text($response, 'Nao foi possivel reiniciar o app Fully nesta TV.'), 502);
+        }
+
+        $message = fully_cloud_response_text($response, 'App Fully reiniciado na TV.');
+    }
+
+    if (!empty($warnings)) {
+        $message .= ' ' . implode(' ', $warnings);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'device' => build_device_payload($device, $registry, fully_cloud_status()),
+        'fully_cloud' => $fullyCloud,
+        'control' => $control,
+        'message' => $message,
+        'response' => isset($response['response']) && is_array($response['response']) ? $response['response'] : array()
     ));
 }
 
