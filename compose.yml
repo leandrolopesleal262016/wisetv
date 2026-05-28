@@ -16,6 +16,10 @@ services:
       - traefik.http.services.wisetv.loadbalancer.server.port=80
     environment:
       TZ: ${TZ:-America/Sao_Paulo}
+      WISETV_PUBLIC_BASE_URL: ${WISETV_PUBLIC_BASE_URL:-}
+      WISETV_FULLY_CLOUD_API_EMAIL: ${WISETV_FULLY_CLOUD_API_EMAIL:-}
+      WISETV_FULLY_CLOUD_API_KEY: ${WISETV_FULLY_CLOUD_API_KEY:-}
+      WISETV_FULLY_CLOUD_API_BASE: ${WISETV_FULLY_CLOUD_API_BASE:-https://api.fully-kiosk.com}
       WISETV_MEDIA_DIR: /var/www/html/midias
       WISETV_ROOT_PLAYLISTS_DIR: /srv/wisetv-data/root/playlists
       WISETV_ROOT_STATUS_DIR: /srv/wisetv-data/root/status

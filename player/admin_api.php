@@ -141,6 +141,16 @@ function sanitize_label($value)
     return trim($label);
 }
 
+function sanitize_fully_device_id($value)
+{
+    $deviceId = trim((string)$value);
+    $deviceId = preg_replace('/[^a-zA-Z0-9._:-]/', '', $deviceId);
+    if ($deviceId === null) {
+        $deviceId = '';
+    }
+    return trim($deviceId);
+}
+
 function sanitize_upload_filename($filename)
 {
     $filename = basename((string)$filename);
@@ -492,6 +502,168 @@ function media_base_url()
         return '';
     }
     return rtrim($parentDir, '/');
+}
+
+function public_base_url()
+{
+    static $resolved = null;
+    if ($resolved !== null) {
+        return $resolved;
+    }
+
+    $configured = getenv('WISETV_PUBLIC_BASE_URL');
+    if (is_string($configured) && trim($configured) !== '') {
+        $resolved = rtrim(trim($configured), '/');
+        return $resolved;
+    }
+
+    $host = isset($_SERVER['HTTP_HOST']) ? trim((string)$_SERVER['HTTP_HOST']) : '';
+    if ($host === '') {
+        $resolved = '';
+        return $resolved;
+    }
+
+    $scheme = 'http';
+    $forwardedProto = isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? trim((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) : '';
+    if ($forwardedProto !== '') {
+        $scheme = strtolower(trim(explode(',', $forwardedProto)[0]));
+    } elseif (
+        (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== '' && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+        || (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+    ) {
+        $scheme = 'https';
+    }
+
+    $resolved = $scheme . '://' . $host;
+    return $resolved;
+}
+
+function absolute_app_url($path)
+{
+    $normalizedPath = '/' . ltrim((string)$path, '/');
+    $base = public_base_url();
+    if ($base === '') {
+        return $normalizedPath;
+    }
+    return $base . $normalizedPath;
+}
+
+function current_script_public_url($extraParams = array())
+{
+    $scriptName = isset($_SERVER['SCRIPT_NAME']) ? str_replace('\\', '/', (string)$_SERVER['SCRIPT_NAME']) : '/player/admin_api.php';
+    $url = absolute_app_url($scriptName);
+    if (!is_array($extraParams) || empty($extraParams)) {
+        return $url;
+    }
+
+    return $url . '?' . http_build_query($extraParams, '', '&', PHP_QUERY_RFC3986);
+}
+
+function absolute_media_or_page_url($url)
+{
+    $value = trim((string)$url);
+    if ($value === '') {
+        return '';
+    }
+
+    if (preg_match('#^(https?:|data:|blob:)#i', $value)) {
+        return $value;
+    }
+
+    if (strpos($value, '/midias/') !== false) {
+        $parts = parse_url($value);
+        $path = isset($parts['path']) ? (string)$parts['path'] : $value;
+        $filename = basename($path);
+        $filename = $filename !== '' ? rawurldecode($filename) : '';
+        if ($filename !== '') {
+            return absolute_app_url(media_url_for_name($filename));
+        }
+    }
+
+    return absolute_app_url($value);
+}
+
+function fully_cloud_api_base()
+{
+    $configured = getenv('WISETV_FULLY_CLOUD_API_BASE');
+    if (!is_string($configured) || trim($configured) === '') {
+        return 'https://api.fully-kiosk.com';
+    }
+
+    return rtrim(trim($configured), '/');
+}
+
+function fully_cloud_api_email()
+{
+    $value = getenv('WISETV_FULLY_CLOUD_API_EMAIL');
+    return is_string($value) ? trim($value) : '';
+}
+
+function fully_cloud_api_key()
+{
+    $value = getenv('WISETV_FULLY_CLOUD_API_KEY');
+    return is_string($value) ? trim($value) : '';
+}
+
+function fully_cloud_template_ready()
+{
+    return false;
+}
+
+function fully_cloud_status()
+{
+    $email = fully_cloud_api_email();
+    $apiKey = fully_cloud_api_key();
+    $publicBase = public_base_url();
+    $templateReady = fully_cloud_template_ready();
+
+    $missing = array();
+    if ($email === '' || $apiKey === '') {
+        $missing[] = 'api_credentials';
+    }
+    if ($publicBase === '') {
+        $missing[] = 'public_base_url';
+    }
+    if (!$templateReady) {
+        $missing[] = 'settings_template';
+    }
+
+    return array(
+        'api_base' => fully_cloud_api_base(),
+        'api_configured' => $email !== '' && $apiKey !== '',
+        'public_base_url' => $publicBase,
+        'public_base_configured' => $publicBase !== '',
+        'manifest_ready' => $publicBase !== '',
+        'settings_ready' => $templateReady,
+        'sync_ready' => empty($missing),
+        'missing_requirements' => $missing,
+        'message' => $templateReady
+            ? 'Pronto para sincronizar assim que a TV estiver vinculada e a API do Fully Cloud estiver configurada.'
+            : 'A sincronizacao final com importSettingsFile sera habilitada quando capturarmos o JSON real de settings do Fully Video Kiosk do device de referencia.'
+    );
+}
+
+function fully_cloud_last_sync_from_entry($entry)
+{
+    $lastSyncAt = isset($entry['fully_last_sync_at']) && is_string($entry['fully_last_sync_at'])
+        ? trim($entry['fully_last_sync_at'])
+        : '';
+    $lastSyncStatus = isset($entry['fully_last_sync_status']) && is_string($entry['fully_last_sync_status'])
+        ? trim($entry['fully_last_sync_status'])
+        : '';
+    $lastSyncMessage = isset($entry['fully_last_sync_message']) && is_string($entry['fully_last_sync_message'])
+        ? trim($entry['fully_last_sync_message'])
+        : '';
+    $lastSyncHash = isset($entry['fully_last_sync_hash']) && is_string($entry['fully_last_sync_hash'])
+        ? trim($entry['fully_last_sync_hash'])
+        : '';
+
+    return array(
+        'last_sync_at' => $lastSyncAt,
+        'last_sync_status' => $lastSyncStatus,
+        'last_sync_message' => $lastSyncMessage,
+        'last_sync_hash' => $lastSyncHash
+    );
 }
 
 function get_status_storage_dir()
@@ -1101,6 +1273,133 @@ function save_device_registry($registry)
     return save_json_file(DEVICE_REGISTRY_FILE, $registry);
 }
 
+function save_registry_device_entry($registry, $device, $payload)
+{
+    if (!is_array($registry)) {
+        $registry = array();
+    }
+    if (!isset($registry['devices']) || !is_array($registry['devices'])) {
+        $registry['devices'] = array();
+    }
+
+    $device = sanitize_device($device);
+    if ($device === '') {
+        return $registry;
+    }
+
+    $current = array();
+    if (isset($registry['devices'][$device]) && is_array($registry['devices'][$device])) {
+        $current = $registry['devices'][$device];
+    }
+
+    $registry['devices'][$device] = array_merge($current, is_array($payload) ? $payload : array());
+    return $registry;
+}
+
+function update_device_sync_state($registry, $device, $status, $message, $playlistHash = '')
+{
+    return save_registry_device_entry($registry, $device, array(
+        'fully_last_sync_at' => gmdate('c'),
+        'fully_last_sync_status' => trim((string)$status),
+        'fully_last_sync_message' => trim((string)$message),
+        'fully_last_sync_hash' => trim((string)$playlistHash)
+    ));
+}
+
+function http_get_text($url, $timeoutSeconds = 30)
+{
+    $headers = array(
+        'Accept: application/json',
+        'User-Agent: WiseTV-FullyCloud/1.0'
+    );
+
+    $context = stream_context_create(array(
+        'http' => array(
+            'method' => 'GET',
+            'timeout' => max(1, (int)$timeoutSeconds),
+            'ignore_errors' => true,
+            'header' => implode("\r\n", $headers) . "\r\n"
+        )
+    ));
+
+    $body = @file_get_contents($url, false, $context);
+    $responseHeaders = isset($http_response_header) && is_array($http_response_header)
+        ? $http_response_header
+        : array();
+
+    $statusCode = 0;
+    if (!empty($responseHeaders) && preg_match('/\s(\d{3})\s/', (string)$responseHeaders[0], $parts)) {
+        $statusCode = (int)$parts[1];
+    }
+
+    return array(
+        'ok' => $body !== false,
+        'status_code' => $statusCode,
+        'headers' => $responseHeaders,
+        'body' => $body !== false ? $body : ''
+    );
+}
+
+function fully_cloud_remote_request($deviceId, $commandParams, $persistent = true, $nowait = false)
+{
+    $deviceId = sanitize_fully_device_id($deviceId);
+    if ($deviceId === '') {
+        return array('ok' => false, 'error' => 'Device ID do Fully invalido');
+    }
+
+    $query = array(
+        'apiemail' => fully_cloud_api_email(),
+        'apikey' => fully_cloud_api_key(),
+        'devid' => $deviceId,
+        'persistent' => $persistent ? '1' : '0',
+        'nowait' => $nowait ? '1' : '0'
+    );
+
+    foreach ((array)$commandParams as $key => $value) {
+        $query[(string)$key] = (string)$value;
+    }
+
+    $url = fully_cloud_api_base() . '/remote/?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    $response = http_get_text($url, 40);
+    if (!$response['ok']) {
+        return array('ok' => false, 'error' => 'Falha ao comunicar com a API do Fully Cloud');
+    }
+
+    $lines = preg_split('/\r\n|\r|\n/', trim((string)$response['body']));
+    $parsed = array();
+    foreach ($lines as $line) {
+        $line = trim((string)$line);
+        if ($line === '') {
+            continue;
+        }
+
+        $decoded = json_decode($line, true);
+        if (is_array($decoded)) {
+            if (isset($decoded['content']) && is_string($decoded['content'])) {
+                $content = base64_decode($decoded['content'], true);
+                if (is_string($content) && $content !== '') {
+                    $decoded['content_decoded'] = $content;
+                    $contentJson = json_decode($content, true);
+                    if (is_array($contentJson)) {
+                        $decoded['content_json'] = $contentJson;
+                    }
+                }
+            }
+            $parsed[] = $decoded;
+            continue;
+        }
+
+        $parsed[] = array('raw' => $line);
+    }
+
+    return array(
+        'ok' => true,
+        'status_code' => $response['status_code'],
+        'response' => $parsed,
+        'raw_body' => (string)$response['body']
+    );
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -1180,18 +1479,114 @@ function normalize_registry_entry($device, $registry)
 
     return array(
         'friendly_name' => $friendlyName,
-        'created_at' => $createdAt
+        'created_at' => $createdAt,
+        'fully_enabled' => request_flag_enabled(isset($entry['fully_enabled']) ? $entry['fully_enabled'] : false),
+        'fully_device_id' => sanitize_fully_device_id(isset($entry['fully_device_id']) ? $entry['fully_device_id'] : ''),
+        'fully_last_sync' => fully_cloud_last_sync_from_entry($entry)
     );
 }
 
-function build_device_payload($device, $registry)
+function fully_manifest_filename($device)
+{
+    return sanitize_upload_filename('fully-manifest-' . sanitize_device($device) . '.json');
+}
+
+function fully_settings_filename($device)
+{
+    return sanitize_upload_filename('fully-video-settings-' . sanitize_device($device) . '.json');
+}
+
+function build_fully_manifest_payload($device, $registry)
 {
     $entry = normalize_registry_entry($device, $registry);
+    $payload = load_playlist_file($device);
+    $playlistItems = is_array($payload) && isset($payload['playlist']) && is_array($payload['playlist'])
+        ? normalize_playlist_items($payload['playlist'])
+        : array();
+
+    $manifestItems = array();
+    foreach ($playlistItems as $index => $item) {
+        $type = isset($item['type']) ? trim((string)$item['type']) : '';
+        $rawUrl = isset($item['url']) ? (string)$item['url'] : '';
+        $url = absolute_media_or_page_url($rawUrl);
+        if ($url === '') {
+            continue;
+        }
+
+        $row = array(
+            'index' => (int)$index,
+            'type' => $type,
+            'url' => $url
+        );
+
+        if (isset($item['duration'])) {
+            $row['duration'] = (int)$item['duration'];
+        }
+
+        $manifestItems[] = $row;
+    }
+
+    $playlistVersion = is_array($payload) ? playlist_version_for_device($device, $payload) : '';
+    $playlistHashSource = json_encode_payload($manifestItems);
+    $playlistHash = is_string($playlistHashSource) ? sha1($playlistHashSource) : '';
+
+    return array(
+        'format' => 'wisetv-fully-manifest-v1',
+        'generated_at' => gmdate('c'),
+        'device' => array(
+            'id' => $device,
+            'friendly_name' => $entry['friendly_name'],
+            'fully_device_id' => $entry['fully_device_id']
+        ),
+        'playlist_version' => $playlistVersion,
+        'playlist_hash' => $playlistHash,
+        'items' => $manifestItems,
+        'urls' => array_values(array_map(function ($item) {
+            return $item['url'];
+        }, $manifestItems))
+    );
+}
+
+function build_fully_settings_export_url($device)
+{
+    return current_script_public_url(array(
+        'action' => 'export_fully_settings',
+        'device' => sanitize_device($device)
+    ));
+}
+
+function build_fully_manifest_export_url($device)
+{
+    return current_script_public_url(array(
+        'action' => 'export_fully_manifest',
+        'device' => sanitize_device($device)
+    ));
+}
+
+function build_device_payload($device, $registry, $fullyCloud = null)
+{
+    $entry = normalize_registry_entry($device, $registry);
+    $fullyCloud = is_array($fullyCloud) ? $fullyCloud : fully_cloud_status();
+    $manifestPayload = build_fully_manifest_payload($device, $registry);
+    $lastSync = $entry['fully_last_sync'];
 
     return array(
         'id' => $device,
         'friendly_name' => $entry['friendly_name'],
-        'created_at' => $entry['created_at']
+        'created_at' => $entry['created_at'],
+        'fully' => array(
+            'enabled' => $entry['fully_enabled'],
+            'device_id' => $entry['fully_device_id'],
+            'manifest_url' => build_fully_manifest_export_url($device),
+            'settings_url' => build_fully_settings_export_url($device),
+            'playlist_hash' => $manifestPayload['playlist_hash'],
+            'playlist_version' => $manifestPayload['playlist_version'],
+            'sync_ready' => $fullyCloud['sync_ready'] && $entry['fully_enabled'] && $entry['fully_device_id'] !== '',
+            'last_sync_at' => $lastSync['last_sync_at'],
+            'last_sync_status' => $lastSync['last_sync_status'],
+            'last_sync_message' => $lastSync['last_sync_message'],
+            'last_sync_hash' => $lastSync['last_sync_hash']
+        )
     );
 }
 
@@ -1382,11 +1777,58 @@ if ($method === 'GET' && $action === 'list_media') {
 
 if ($method === 'GET' && $action === 'list_tvs') {
     $registry = load_device_registry();
-    $devices = array_map(function ($device) use ($registry) {
-        return build_device_payload($device, $registry);
+    $fullyCloud = fully_cloud_status();
+    $devices = array_map(function ($device) use ($registry, $fullyCloud) {
+        return build_device_payload($device, $registry, $fullyCloud);
     }, list_all_device_ids($registry));
 
-    json_ok(array('ok' => true, 'devices' => $devices));
+    json_ok(array(
+        'ok' => true,
+        'devices' => $devices,
+        'fully_cloud' => $fullyCloud
+    ));
+}
+
+if ($method === 'GET' && $action === 'get_fully_cloud_status') {
+    json_ok(array(
+        'ok' => true,
+        'fully_cloud' => fully_cloud_status()
+    ));
+}
+
+if ($method === 'GET' && $action === 'export_fully_manifest') {
+    $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    $registry = load_device_registry();
+    $knownDevices = list_all_device_ids($registry);
+    if (!in_array($device, $knownDevices, true)) {
+        json_error('TV nao encontrada', 404);
+    }
+
+    $payload = build_fully_manifest_payload($device, $registry);
+    $json = json_encode_payload($payload, JSON_PRETTY_PRINT);
+    if ($json === false) {
+        json_error('Falha ao gerar manifesto do Fully', 500);
+    }
+
+    header('Content-Disposition: inline; filename="' . fully_manifest_filename($device) . '"');
+    echo $json . PHP_EOL;
+    exit;
+}
+
+if ($method === 'GET' && $action === 'export_fully_settings') {
+    $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    json_error(
+        'A exportacao do fully-video-settings.json sera habilitada quando capturarmos os settings reais do Fully Video Kiosk do device de referencia via API/Remote Admin.',
+        409
+    );
 }
 
 if (($method === 'GET' || $method === 'POST') && $action === 'heartbeat') {
@@ -1625,16 +2067,19 @@ if ($method === 'POST' && $action === 'create_device') {
 
     $registry['devices'][$device] = array(
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
-        'created_at' => gmdate('c')
+        'created_at' => gmdate('c'),
+        'fully_enabled' => false,
+        'fully_device_id' => ''
     );
 
     if (!save_device_registry($registry)) {
         json_error('Nao foi possivel salvar os dados da TV', 500);
     }
 
+    $fullyCloud = fully_cloud_status();
     json_ok(array(
         'ok' => true,
-        'device' => build_device_payload($device, $registry)
+        'device' => build_device_payload($device, $registry, $fullyCloud)
     ));
 }
 
@@ -1663,7 +2108,9 @@ if ($method === 'POST' && $action === 'clone_playlist') {
 
     $registry['devices'][$device] = array(
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
-        'created_at' => gmdate('c')
+        'created_at' => gmdate('c'),
+        'fully_enabled' => false,
+        'fully_device_id' => ''
     );
 
     if (!save_device_registry($registry)) {
@@ -1671,10 +2118,11 @@ if ($method === 'POST' && $action === 'clone_playlist') {
         json_error('Nao foi possivel salvar os dados da nova TV', 500);
     }
 
+    $fullyCloud = fully_cloud_status();
     json_ok(array(
         'ok' => true,
         'source_device' => $sourceDevice,
-        'device' => build_device_payload($device, $registry),
+        'device' => build_device_payload($device, $registry, $fullyCloud),
         'count' => count($playlistItems)
     ));
 }
@@ -1694,18 +2142,136 @@ if ($method === 'POST' && $action === 'update_device') {
 
     $entry = normalize_registry_entry($device, $registry);
     $friendlyName = sanitize_label(isset($body['friendly_name']) ? $body['friendly_name'] : '');
+    $fullyEnabled = request_flag_enabled(isset($body['fully_enabled']) ? $body['fully_enabled'] : $entry['fully_enabled']);
+    $fullyDeviceId = sanitize_fully_device_id(isset($body['fully_device_id']) ? $body['fully_device_id'] : $entry['fully_device_id']);
+    $lastSync = isset($entry['fully_last_sync']) && is_array($entry['fully_last_sync']) ? $entry['fully_last_sync'] : array();
     $registry['devices'][$device] = array(
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
-        'created_at' => $entry['created_at']
+        'created_at' => $entry['created_at'],
+        'fully_enabled' => $fullyEnabled,
+        'fully_device_id' => $fullyDeviceId,
+        'fully_last_sync_at' => isset($lastSync['last_sync_at']) ? $lastSync['last_sync_at'] : '',
+        'fully_last_sync_status' => isset($lastSync['last_sync_status']) ? $lastSync['last_sync_status'] : '',
+        'fully_last_sync_message' => isset($lastSync['last_sync_message']) ? $lastSync['last_sync_message'] : '',
+        'fully_last_sync_hash' => isset($lastSync['last_sync_hash']) ? $lastSync['last_sync_hash'] : ''
     );
 
     if (!save_device_registry($registry)) {
         json_error('Nao foi possivel atualizar os dados da TV', 500);
     }
 
+    $fullyCloud = fully_cloud_status();
     json_ok(array(
         'ok' => true,
-        'device' => build_device_payload($device, $registry)
+        'device' => build_device_payload($device, $registry, $fullyCloud)
+    ));
+}
+
+if ($method === 'POST' && $action === 'fetch_fully_device_settings') {
+    $body = read_json_body();
+    $device = sanitize_device(isset($body['device']) ? $body['device'] : '');
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    $fullyCloud = fully_cloud_status();
+    if (!$fullyCloud['api_configured']) {
+        json_error('Configure WISETV_FULLY_CLOUD_API_EMAIL e WISETV_FULLY_CLOUD_API_KEY antes de consultar o Fully Cloud.', 409);
+    }
+
+    $registry = load_device_registry();
+    $knownDevices = list_all_device_ids($registry);
+    if (!in_array($device, $knownDevices, true)) {
+        json_error('TV nao encontrada', 404);
+    }
+
+    $entry = normalize_registry_entry($device, $registry);
+    if ($entry['fully_device_id'] === '') {
+        json_error('Preencha o Device ID do Fully Cloud para esta TV antes de consultar os settings.', 409);
+    }
+
+    $response = fully_cloud_remote_request($entry['fully_device_id'], array(
+        'cmd' => 'listSettings',
+        'type' => 'json'
+    ), false, false);
+
+    if (!$response['ok']) {
+        json_error(isset($response['error']) ? $response['error'] : 'Falha ao consultar o Fully Cloud.', 502);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'device' => $device,
+        'fully_device_id' => $entry['fully_device_id'],
+        'fully_cloud' => $fullyCloud,
+        'response' => $response['response']
+    ));
+}
+
+if ($method === 'POST' && $action === 'sync_fully_device') {
+    $body = read_json_body();
+    $device = sanitize_device(isset($body['device']) ? $body['device'] : '');
+    if ($device === '') {
+        json_error('Device invalido', 400);
+    }
+
+    $registry = load_device_registry();
+    $knownDevices = list_all_device_ids($registry);
+    if (!in_array($device, $knownDevices, true)) {
+        json_error('TV nao encontrada', 404);
+    }
+
+    $entry = normalize_registry_entry($device, $registry);
+    if (!$entry['fully_enabled']) {
+        json_error('Ative a integracao com Fully Cloud para esta TV antes de sincronizar.', 409);
+    }
+    if ($entry['fully_device_id'] === '') {
+        json_error('Preencha o Device ID do Fully Cloud para esta TV antes de sincronizar.', 409);
+    }
+
+    $fullyCloud = fully_cloud_status();
+    if (!$fullyCloud['api_configured']) {
+        json_error('Configure WISETV_FULLY_CLOUD_API_EMAIL e WISETV_FULLY_CLOUD_API_KEY antes de sincronizar.', 409);
+    }
+    if (!$fullyCloud['public_base_configured']) {
+        json_error('Configure WISETV_PUBLIC_BASE_URL para gerar uma URL publica de settings.', 409);
+    }
+    if (!$fullyCloud['settings_ready']) {
+        json_error(
+            'A sincronizacao automatica ainda depende de capturar o JSON real de settings do Fully Video Kiosk do device de referencia.',
+            409
+        );
+    }
+
+    $manifest = build_fully_manifest_payload($device, $registry);
+    $settingsUrl = build_fully_settings_export_url($device);
+    $response = fully_cloud_remote_request($entry['fully_device_id'], array(
+        'cmd' => 'importSettingsFile',
+        'url' => $settingsUrl
+    ), true, false);
+
+    if (!$response['ok']) {
+        $registry = update_device_sync_state($registry, $device, 'error', isset($response['error']) ? $response['error'] : 'Falha ao sincronizar', $manifest['playlist_hash']);
+        save_device_registry($registry);
+        json_error(isset($response['error']) ? $response['error'] : 'Falha ao sincronizar com o Fully Cloud.', 502);
+    }
+
+    $responseLine = isset($response['response'][0]) && is_array($response['response'][0])
+        ? $response['response'][0]
+        : array();
+    $syncStatus = isset($responseLine['status']) ? trim((string)$responseLine['status']) : 'OK';
+    $syncMessage = isset($responseLine['statustext']) ? trim((string)$responseLine['statustext']) : 'Comando enviado ao Fully Cloud';
+
+    $registry = update_device_sync_state($registry, $device, $syncStatus, $syncMessage, $manifest['playlist_hash']);
+    if (!save_device_registry($registry)) {
+        json_error('Sincronizacao enviada, mas nao foi possivel salvar o status local.', 500);
+    }
+
+    json_ok(array(
+        'ok' => true,
+        'device' => build_device_payload($device, $registry, fully_cloud_status()),
+        'fully_cloud' => fully_cloud_status(),
+        'response' => $response['response']
     ));
 }
 

@@ -598,7 +598,7 @@
         <label for="deviceFriendlyInput">Nome amigavel da TV selecionada</label>
         <div class="row">
           <input id="deviceFriendlyInput" type="text" placeholder="Ex: Cliente Loja Centro" />
-          <button id="saveDeviceBtn" class="btn-secondary" type="button">Salvar nome</button>
+          <button id="saveDeviceBtn" class="btn-secondary" type="button">Salvar TV</button>
         </div>
 
         <label for="deviceIdInput">ID interno da TV</label>
@@ -607,6 +607,34 @@
         <label for="deviceEndpointInput">URL para configurar no Fully Kiosk</label>
         <input id="deviceEndpointInput" type="text" readonly />
         <div class="small">Use esta URL como pagina inicial da TV no Fully Kiosk para o cliente selecionado.</div>
+
+        <hr class="section-divider">
+
+        <h2>Fully Cloud</h2>
+        <label style="display:flex; align-items:center; gap:8px; color:var(--text); margin-bottom:10px;">
+          <input id="deviceFullyEnabledInput" type="checkbox" style="width:auto; margin:0;" />
+          Ativar integracao com Fully Cloud nesta TV
+        </label>
+
+        <label for="deviceFullyIdInput">Device ID do Fully Cloud</label>
+        <input id="deviceFullyIdInput" type="text" placeholder="Ex: 3573dea0-f2d4b6b7" />
+
+        <label for="deviceFullyManifestInput">URL do manifesto WiseTV para o Fully</label>
+        <div class="row">
+          <input id="deviceFullyManifestInput" type="text" readonly />
+          <button id="openFullyManifestBtn" class="btn-secondary" type="button">Abrir</button>
+        </div>
+
+        <label for="deviceFullySettingsInput">URL do fully-video-settings.json</label>
+        <div class="row">
+          <input id="deviceFullySettingsInput" type="text" readonly />
+          <button id="openFullySettingsBtn" class="btn-secondary" type="button">Abrir</button>
+        </div>
+
+        <div class="actions stack-actions">
+          <button id="syncFullyBtn" class="btn-ok" type="button">Sincronizar com Fully Cloud</button>
+        </div>
+        <div id="deviceFullyHint" class="small">A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.</div>
 
         <div class="actions stack-actions" style="margin-top:14px;">
           <button id="previewBtn" class="btn-ok" type="button">Visualizar</button>
@@ -777,6 +805,14 @@
     const deleteDeviceBtn = document.getElementById("deleteDeviceBtn");
     const clonePlaylistBtn = document.getElementById("clonePlaylistBtn");
     const previewBtn = document.getElementById("previewBtn");
+    const deviceFullyEnabledInput = document.getElementById("deviceFullyEnabledInput");
+    const deviceFullyIdInput = document.getElementById("deviceFullyIdInput");
+    const deviceFullyManifestInput = document.getElementById("deviceFullyManifestInput");
+    const deviceFullySettingsInput = document.getElementById("deviceFullySettingsInput");
+    const openFullyManifestBtn = document.getElementById("openFullyManifestBtn");
+    const openFullySettingsBtn = document.getElementById("openFullySettingsBtn");
+    const syncFullyBtn = document.getElementById("syncFullyBtn");
+    const deviceFullyHint = document.getElementById("deviceFullyHint");
     const refreshLogsBtn = document.getElementById("refreshLogsBtn");
     const mediaPreviewModal = document.getElementById("mediaPreviewModal");
     const mediaPreviewTitle = document.getElementById("mediaPreviewTitle");
@@ -808,6 +844,17 @@
       selectedMediaName: "",
       bulkTargetDevices: [],
       playlist: [],
+      fullyCloud: {
+        api_base: "",
+        api_configured: false,
+        public_base_url: "",
+        public_base_configured: false,
+        manifest_ready: false,
+        settings_ready: false,
+        sync_ready: false,
+        missing_requirements: [],
+        message: ""
+      },
       saveTimer: null,
       isSaving: false,
       dragFromIndex: -1
@@ -973,12 +1020,45 @@
       return state.devices.find((item) => item.id === deviceId) || null;
     }
 
+    function getFullyRecord(device = getDeviceRecord()) {
+      if (!device || typeof device.fully !== "object" || device.fully === null) {
+        return {
+          enabled: false,
+          device_id: "",
+          manifest_url: "",
+          settings_url: "",
+          playlist_hash: "",
+          playlist_version: "",
+          sync_ready: false,
+          last_sync_at: "",
+          last_sync_status: "",
+          last_sync_message: "",
+          last_sync_hash: ""
+        };
+      }
+      return device.fully;
+    }
+
     function getDeviceLabel(device) {
       if (!device) return "";
       const friendly = String(device.friendly_name || device.id || "").trim();
       const id = String(device.id || "").trim();
       if (!friendly || friendly === id) return id;
       return `${friendly} (${id})`;
+    }
+
+    function formatIsoDateTime(value) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) return text;
+      return parsed.toLocaleString("pt-BR");
+    }
+
+    function openReadonlyUrlValue(inputEl) {
+      const value = String(inputEl && inputEl.value ? inputEl.value : "").trim();
+      if (!value) return;
+      window.open(value, "_blank", "noopener");
     }
 
     function normalizeDeviceList(deviceIds) {
@@ -1117,12 +1197,20 @@
       const hasDevice = !!state.selectedDevice;
       const hasSelectedMedia = !!getSelectedMediaOption();
       const hasDevices = state.devices.length > 0;
+      const fullyEnabled = !!deviceFullyEnabledInput.checked;
+      const fullyDeviceId = deviceFullyIdInput.value.trim();
+      const fullySettingsReady = !!state.fullyCloud.settings_ready;
 
       deviceFriendlyInput.disabled = !hasDevice;
+      deviceFullyEnabledInput.disabled = !hasDevice;
+      deviceFullyIdInput.disabled = !hasDevice;
       saveDeviceBtn.disabled = !hasDevice;
       deleteDeviceBtn.disabled = !hasDevice;
       clonePlaylistBtn.disabled = !hasDevice;
       previewBtn.disabled = !hasDevice;
+      openFullyManifestBtn.disabled = !hasDevice || !deviceFullyManifestInput.value.trim();
+      openFullySettingsBtn.disabled = !hasDevice || !fullySettingsReady || !deviceFullySettingsInput.value.trim();
+      syncFullyBtn.disabled = !hasDevice || !fullyEnabled || !fullyDeviceId || !state.fullyCloud.api_configured || !fullySettingsReady;
 
       addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
       viewMediaBtn.disabled = !hasSelectedMedia;
@@ -1332,20 +1420,68 @@
         deviceFriendlyInput.value = "";
         deviceIdInput.value = "";
         deviceEndpointInput.value = "";
+        deviceFullyEnabledInput.checked = false;
+        deviceFullyIdInput.value = "";
+        deviceFullyManifestInput.value = "";
+        deviceFullySettingsInput.value = "";
+        deviceFullyHint.textContent = state.fullyCloud.message || "A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.";
         updatePlaylistTitle();
         updateActionStates();
         return;
       }
 
+      const fully = getFullyRecord(device);
       deviceFriendlyInput.value = device.friendly_name || device.id;
       deviceIdInput.value = device.id;
+      deviceFullyEnabledInput.checked = !!fully.enabled;
+      deviceFullyIdInput.value = fully.device_id || "";
 
       const playerUrl = new URL("index.html", window.location.href);
       playerUrl.searchParams.set("device", device.id);
       deviceEndpointInput.value = playerUrl.toString();
+      deviceFullyManifestInput.value = fully.manifest_url || "";
+      deviceFullySettingsInput.value = fully.settings_url || "";
 
+      renderFullyCloudHint();
       updatePlaylistTitle();
       updateActionStates();
+    }
+
+    function renderFullyCloudHint() {
+      const device = getDeviceRecord();
+      const fully = getFullyRecord(device);
+      const missing = Array.isArray(state.fullyCloud.missing_requirements) ? state.fullyCloud.missing_requirements : [];
+
+      if (!device) {
+        deviceFullyHint.textContent = state.fullyCloud.message || "A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.";
+        return;
+      }
+
+      const parts = [];
+      if (!fully.enabled) {
+        parts.push("Ative a integracao com Fully Cloud para usar export e sincronizacao automatica nesta TV.");
+      }
+      if (!fully.device_id) {
+        parts.push("Preencha o Device ID exibido no app Fully Video Kiosk desta TV.");
+      }
+      if (missing.includes("api_credentials")) {
+        parts.push("Faltam as credenciais WISETV_FULLY_CLOUD_API_EMAIL e WISETV_FULLY_CLOUD_API_KEY no servidor.");
+      }
+      if (missing.includes("public_base_url")) {
+        parts.push("Falta configurar WISETV_PUBLIC_BASE_URL para o WiseTV gerar URLs publicas para o Fully.");
+      }
+      if (missing.includes("settings_template")) {
+        parts.push("O manifesto ja pode ser exportado, mas o fully-video-settings.json final sera habilitado quando capturarmos os settings reais do device de referencia.");
+      }
+      if (fully.last_sync_at) {
+        const statusLabel = fully.last_sync_status ? ` ${fully.last_sync_status}.` : "";
+        const msg = fully.last_sync_message ? ` ${fully.last_sync_message}` : "";
+        parts.push(`Ultima sincronizacao: ${formatIsoDateTime(fully.last_sync_at)}.${statusLabel}${msg}`.trim());
+      }
+
+      deviceFullyHint.textContent = parts.length
+        ? parts.join(" ")
+        : (state.fullyCloud.message || "Integracao com Fully Cloud pronta para esta TV.");
     }
 
     function getDisplayName(url) {
@@ -1769,6 +1905,12 @@
     async function loadDevices(preferredDevice = state.selectedDevice) {
       const data = await apiGet({ action: "list_tvs" });
       state.devices = Array.isArray(data.devices) ? data.devices : [];
+      if (data.fully_cloud && typeof data.fully_cloud === "object") {
+        state.fullyCloud = {
+          ...state.fullyCloud,
+          ...data.fully_cloud
+        };
+      }
 
       if (preferredDevice && state.devices.some((device) => device.id === preferredDevice)) {
         state.selectedDevice = preferredDevice;
@@ -2241,16 +2383,58 @@
 
       try {
         const friendlyName = deviceFriendlyInput.value.trim();
+        const fullyDeviceId = deviceFullyIdInput.value.trim();
         await apiPost("update_device", {
           device: state.selectedDevice,
-          friendly_name: friendlyName
+          friendly_name: friendlyName,
+          fully_enabled: deviceFullyEnabledInput.checked,
+          fully_device_id: fullyDeviceId
         });
 
         await loadDevices(state.selectedDevice);
         await loadDeviceStatus();
         renderSelectedDeviceDetails();
 
-        setStatus(`Nome amigavel de ${state.selectedDevice} atualizado.`);
+        setStatus(`Dados de ${state.selectedDevice} atualizados.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    function openFullyManifest() {
+      openReadonlyUrlValue(deviceFullyManifestInput);
+    }
+
+    function openFullySettings() {
+      openReadonlyUrlValue(deviceFullySettingsInput);
+    }
+
+    async function syncSelectedDeviceWithFullyCloud() {
+      if (!state.selectedDevice) {
+        setStatus("Selecione uma TV para sincronizar.", true);
+        return;
+      }
+
+      try {
+        const result = await apiPost("sync_fully_device", {
+          device: state.selectedDevice
+        });
+
+        if (result.fully_cloud && typeof result.fully_cloud === "object") {
+          state.fullyCloud = {
+            ...state.fullyCloud,
+            ...result.fully_cloud
+          };
+        }
+
+        await loadDevices(state.selectedDevice);
+        renderSelectedDeviceDetails();
+
+        const responseLine = Array.isArray(result.response) && result.response.length ? result.response[0] : null;
+        const syncText = responseLine && responseLine.statustext
+          ? responseLine.statustext
+          : "Comando enviado para o Fully Cloud.";
+        setStatus(`Fully Cloud: ${syncText}`);
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -2425,6 +2609,9 @@
     saveDeviceBtn.addEventListener("click", saveSelectedDeviceName);
     deleteDeviceBtn.addEventListener("click", deleteSelectedDevice);
     previewBtn.addEventListener("click", openPreview);
+    openFullyManifestBtn.addEventListener("click", openFullyManifest);
+    openFullySettingsBtn.addEventListener("click", openFullySettings);
+    syncFullyBtn.addEventListener("click", syncSelectedDeviceWithFullyCloud);
     selectAllPlaylistsBtn.addEventListener("click", () => {
       setBulkTargetDevices(state.devices.map((device) => device.id));
     });
@@ -2459,6 +2646,21 @@
       }
     });
 
+    deviceFullyIdInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        saveSelectedDeviceName();
+      }
+    });
+    deviceFullyEnabledInput.addEventListener("change", () => {
+      renderFullyCloudHint();
+      updateActionStates();
+    });
+    deviceFullyIdInput.addEventListener("input", () => {
+      renderFullyCloudHint();
+      updateActionStates();
+    });
+
     newDeviceFriendlyInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -2474,6 +2676,8 @@
     });
 
     deviceEndpointInput.addEventListener("focus", () => deviceEndpointInput.select());
+    deviceFullyManifestInput.addEventListener("focus", () => deviceFullyManifestInput.select());
+    deviceFullySettingsInput.addEventListener("focus", () => deviceFullySettingsInput.select());
     mediaPreviewModal.addEventListener("click", (event) => {
       if (event.target === mediaPreviewModal) {
         closeMediaPreview();
