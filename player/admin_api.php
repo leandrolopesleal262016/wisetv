@@ -2043,7 +2043,7 @@ if ($method === 'GET' && $action === 'get_fully_cloud_status') {
     ));
 }
 
-if ($method === 'GET' && $action === 'export_fully_manifest') {
+if (($method === 'GET' || $method === 'HEAD') && $action === 'export_fully_manifest') {
     $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
     if ($device === '') {
         json_error('Device invalido', 400);
@@ -2062,11 +2062,14 @@ if ($method === 'GET' && $action === 'export_fully_manifest') {
     }
 
     header('Content-Disposition: inline; filename="' . fully_manifest_filename($device) . '"');
+    if ($method === 'HEAD') {
+        exit;
+    }
     echo $json . PHP_EOL;
     exit;
 }
 
-if ($method === 'GET' && $action === 'export_fully_settings') {
+if (($method === 'GET' || $method === 'HEAD') && $action === 'export_fully_settings') {
     $device = sanitize_device(isset($_GET['device']) ? $_GET['device'] : '');
     if ($device === '') {
         json_error('Device invalido', 400);
@@ -2092,6 +2095,9 @@ if ($method === 'GET' && $action === 'export_fully_settings') {
     }
 
     header('Content-Disposition: inline; filename="' . fully_settings_filename($device) . '"');
+    if ($method === 'HEAD') {
+        exit;
+    }
     echo $json . PHP_EOL;
     exit;
 }
