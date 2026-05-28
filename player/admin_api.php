@@ -1531,6 +1531,20 @@ function fully_cloud_reload_start_url($fullyDeviceId)
     ), true, false);
 }
 
+function fully_cloud_set_string_setting($fullyDeviceId, $key, $value)
+{
+    $settingKey = trim((string)$key);
+    if ($settingKey === '') {
+        return array('ok' => false, 'error' => 'Chave de setting do Fully invalida');
+    }
+
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'setStringSetting',
+        'key' => $settingKey,
+        'value' => (string)$value
+    ), true, false);
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -2746,6 +2760,15 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         $syncStatus = 'OK';
     }
     $syncMessage = fully_cloud_response_text($response, 'Comando enviado ao Fully Cloud');
+
+    $wallpaperUrl = build_fully_wallpaper_url($device, $registry);
+    $wallpaperResponse = fully_cloud_set_string_setting($entry['fully_device_id'], 'wallpaperURL', $wallpaperUrl);
+    if (!$wallpaperResponse['ok'] || strcasecmp(fully_cloud_response_status($wallpaperResponse), 'Error') === 0) {
+        $wallpaperSetWarning = fully_cloud_response_text($wallpaperResponse, 'Nao foi possivel gravar o Wallpaper URL no Fully Cloud.');
+        if ($wallpaperSetWarning !== '') {
+            $syncMessage .= ' Wallpaper URL: ' . $wallpaperSetWarning;
+        }
+    }
 
     $reloadWallpaperResponse = fully_cloud_reload_start_url($entry['fully_device_id']);
     if (!$reloadWallpaperResponse['ok'] || strcasecmp(fully_cloud_response_status($reloadWallpaperResponse), 'Error') === 0) {
