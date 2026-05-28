@@ -135,6 +135,29 @@
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .stack-actions { margin-bottom: 10px; }
     .is-hidden { display: none !important; }
+    .tab-strip {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0 14px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: #e8edfb;
+      color: #34415f;
+      border: 1px solid #d3dcf4;
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: transparent;
+    }
+    .tab-panel {
+      display: grid;
+      gap: 0;
+    }
+    .tab-panel.is-hidden {
+      display: none;
+    }
     .table-wrap {
       width: 100%;
       overflow-x: auto;
@@ -596,136 +619,148 @@
         <label for="deviceSelect">TV (device)</label>
         <select id="deviceSelect"></select>
 
-        <label for="deviceFriendlyInput">Nome amigavel da TV selecionada</label>
-        <div class="row">
-          <input id="deviceFriendlyInput" type="text" placeholder="Ex: Cliente Loja Centro" />
-          <button id="saveDeviceBtn" class="btn-secondary" type="button">Salvar TV</button>
+        <div class="tab-strip">
+          <button id="sidebarPlaylistTabBtn" class="tab-btn active" type="button">Playlist</button>
+          <button id="sidebarSettingsTabBtn" class="tab-btn" type="button">Configuracoes</button>
         </div>
 
-        <label for="deviceIdInput">ID interno da TV</label>
-        <input id="deviceIdInput" type="text" readonly />
-
-        <label for="deviceEndpointInput">URL para configurar no Fully Kiosk</label>
-        <input id="deviceEndpointInput" type="text" readonly />
-        <div class="small">Use esta URL como pagina inicial da TV no Fully Kiosk para o cliente selecionado.</div>
-
-        <hr class="section-divider">
-
-        <h2>Fully Cloud</h2>
-        <label style="display:flex; align-items:center; gap:8px; color:var(--text); margin-bottom:10px;">
-          <input id="deviceFullyEnabledInput" type="checkbox" style="width:auto; margin:0;" />
-          Ativar integracao com Fully Cloud nesta TV
-        </label>
-
-        <label for="deviceFullyIdInput">Device ID do Fully Cloud</label>
-        <input id="deviceFullyIdInput" type="text" placeholder="Ex: 3573dea0-f2d4b6b7" />
-
-        <label for="deviceFullyManifestInput">URL do manifesto WiseTV para o Fully</label>
-        <div class="row">
-          <input id="deviceFullyManifestInput" type="text" readonly />
-          <button id="openFullyManifestBtn" class="btn-secondary" type="button">Abrir</button>
-        </div>
-
-        <label for="deviceFullySettingsInput">URL do fully-video-settings.json</label>
-        <div class="row">
-          <input id="deviceFullySettingsInput" type="text" readonly />
-          <button id="openFullySettingsBtn" class="btn-secondary" type="button">Abrir</button>
-        </div>
-
-        <div class="actions stack-actions">
-          <button id="syncFullyBtn" class="btn-ok" type="button">Sincronizar com Fully Cloud</button>
-        </div>
-        <div id="deviceFullyHint" class="small">A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.</div>
-
-        <div class="actions stack-actions" style="margin-top:14px;">
-          <button id="previewBtn" class="btn-ok" type="button">Visualizar</button>
-          <button id="deleteDeviceBtn" class="btn-danger" type="button">Remover TV</button>
-        </div>
-
-        <hr class="section-divider">
-
-        <label for="newDeviceFriendlyInput">Nova TV</label>
-        <div class="row">
-          <input id="newDeviceFriendlyInput" type="text" placeholder="Nome amigavel do cliente" />
-          <button id="createDeviceBtn" type="button">Criar TV</button>
-        </div>
-        <div class="small">Novas TVs recebem IDs automaticos no padrao tv01, tv02, tv03...</div>
-
-        <label for="cloneDeviceFriendlyInput" style="margin-top:12px;">Clonar playlist atual em uma nova TV</label>
-        <div class="row">
-          <input id="cloneDeviceFriendlyInput" type="text" placeholder="Nome amigavel da nova TV" />
-          <button id="clonePlaylistBtn" class="btn-secondary" type="button">Clonar playlist</button>
-        </div>
-        <div class="small">Cria uma nova TV com o proximo ID disponivel e copia a playlist da TV selecionada.</div>
-
-        <hr class="section-divider">
-
-        <label for="mediaSelect">Midia disponivel</label>
-        <select id="mediaSelect"></select>
-        <div id="selectedMediaCard" class="media-selected-card empty">Selecione uma midia para ver a miniatura.</div>
-        <div class="actions stack-actions">
-          <button id="addMediaBtn" class="btn-ok" type="button">Adicionar na playlist</button>
-          <button id="viewMediaBtn" class="btn-secondary" type="button">Visualizar midia</button>
-        </div>
-        <div id="mediaGallery" class="media-gallery"></div>
-        <div class="small">As midias mais recentes aparecem primeiro. Clique em uma miniatura para selecionar ou visualizar.</div>
-
-        <label for="mediaRenameInput">Renomear midia selecionada</label>
-        <div class="row">
-          <input id="mediaRenameInput" type="text" placeholder="Ex: campanha_cliente.mp4" />
-          <button id="renameMediaBtn" class="btn-secondary" type="button">Renomear</button>
-        </div>
-        <div class="actions stack-actions">
-          <button id="deleteMediaBtn" class="btn-danger" type="button">Excluir midia</button>
-        </div>
-        <div class="small">Ao excluir uma midia, ela tambem e removida das playlists que a utilizam.</div>
-
-        <div id="durationWrap">
-          <label for="durationInput">Duracao (segundos)</label>
-          <input id="durationInput" type="number" min="1" value="10" />
-        </div>
-        <div id="durationHint" class="small">A duracao so e usada para imagens.</div>
-
-        <hr class="section-divider">
-
-        <label for="uploadInput">Enviar nova midia (salva apenas na pasta /midias)</label>
-        <input id="uploadInput" type="file" accept=".jpeg,.jpg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v" />
-        <label class="small" for="stripAudioInput">
-          <input id="stripAudioInput" type="checkbox" />
-          Remover audio ao padronizar o video
-        </label>
-        <div class="small">Use quando a TV nao precisa de som. Imagens nao sao afetadas.</div>
-        <div id="playlistBulkSection" class="checklist-panel">
-          <div class="checklist-header">
-            <strong>Ao enviar uma nova midia, adicionar tambem em:</strong>
-            <div class="checklist-toolbar">
-              <button id="selectAllPlaylistsBtn" class="btn-secondary" type="button">Marcar todas</button>
-              <button id="selectCurrentPlaylistBtn" class="btn-secondary" type="button">So TV atual</button>
-              <button id="clearPlaylistSelectionBtn" class="btn-secondary" type="button">Limpar</button>
-            </div>
+        <section id="sidebarPlaylistPanel" class="tab-panel">
+          <label for="mediaSelect">Midia disponivel</label>
+          <select id="mediaSelect"></select>
+          <div id="selectedMediaCard" class="media-selected-card empty">Selecione uma midia para ver a miniatura.</div>
+          <div class="actions stack-actions">
+            <button id="addMediaBtn" class="btn-ok" type="button">Adicionar na playlist</button>
+            <button id="viewMediaBtn" class="btn-secondary" type="button">Visualizar midia</button>
           </div>
-          <div id="playlistCheckboxContainer" class="checklist-grid"></div>
-          <div class="small">A nova midia sera inserida no final das playlists marcadas logo apos o upload.</div>
-        </div>
-        <div id="uploadLoading" class="upload-loading">
-          <span class="spinner"></span>
-          <span>Enviando arquivo...</span>
-        </div>
-        <div id="uploadPolicyHint" class="small upload-policy"></div>
+          <div id="mediaGallery" class="media-gallery"></div>
+          <div class="small">As midias mais recentes aparecem primeiro. Clique em uma miniatura para selecionar ou visualizar.</div>
 
-        <hr class="section-divider">
+          <label for="mediaRenameInput">Renomear midia selecionada</label>
+          <div class="row">
+            <input id="mediaRenameInput" type="text" placeholder="Ex: campanha_cliente.mp4" />
+            <button id="renameMediaBtn" class="btn-secondary" type="button">Renomear</button>
+          </div>
+          <div class="actions stack-actions">
+            <button id="deleteMediaBtn" class="btn-danger" type="button">Excluir midia</button>
+          </div>
+          <div class="small">Ao excluir uma midia, ela tambem e removida das playlists que a utilizam.</div>
 
-        <label for="youtubeUrlInput">YouTube (video normal)</label>
-        <input id="youtubeUrlInput" type="text" placeholder="Cole URL do YouTube (watch, youtu.be, embed)" />
-        <div class="actions stack-actions">
-          <button id="addYoutubeBtn" type="button">YouTube</button>
-        </div>
+          <div id="durationWrap">
+            <label for="durationInput">Duracao (segundos)</label>
+            <input id="durationInput" type="number" min="1" value="10" />
+          </div>
+          <div id="durationHint" class="small">A duracao so e usada para imagens.</div>
 
-        <label for="liveEmbedInput">Live (URL embed)</label>
-        <input id="liveEmbedInput" type="text" placeholder="https://www.youtube.com/embed/..." />
-        <div class="actions">
-          <button id="addLiveEmbedBtn" type="button">Live</button>
-        </div>
+          <hr class="section-divider">
+
+          <label for="uploadInput">Enviar nova midia (salva apenas na pasta /midias)</label>
+          <input id="uploadInput" type="file" accept=".jpeg,.jpg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v" />
+          <label class="small" for="stripAudioInput">
+            <input id="stripAudioInput" type="checkbox" />
+            Remover audio ao padronizar o video
+          </label>
+          <div class="small">Use quando a TV nao precisa de som. Imagens nao sao afetadas.</div>
+          <div id="playlistBulkSection" class="checklist-panel">
+            <div class="checklist-header">
+              <strong>Ao enviar uma nova midia, adicionar tambem em:</strong>
+              <div class="checklist-toolbar">
+                <button id="selectAllPlaylistsBtn" class="btn-secondary" type="button">Marcar todas</button>
+                <button id="selectCurrentPlaylistBtn" class="btn-secondary" type="button">Somente TV atual</button>
+                <button id="clearPlaylistSelectionBtn" class="btn-secondary" type="button">Limpar</button>
+              </div>
+            </div>
+            <div id="playlistCheckboxContainer" class="checklist-grid"></div>
+            <div class="small">O padrao seguro e So TV atual. A nova midia sera inserida no final das playlists marcadas logo apos o upload.</div>
+          </div>
+          <div id="uploadLoading" class="upload-loading">
+            <span class="spinner"></span>
+            <span>Enviando arquivo...</span>
+          </div>
+          <div id="uploadPolicyHint" class="small upload-policy"></div>
+
+          <hr class="section-divider">
+
+          <label for="youtubeUrlInput">YouTube (video normal)</label>
+          <input id="youtubeUrlInput" type="text" placeholder="Cole URL do YouTube (watch, youtu.be, embed)" />
+          <div class="actions stack-actions">
+            <button id="addYoutubeBtn" type="button">YouTube</button>
+          </div>
+
+          <label for="liveEmbedInput">Live (URL embed)</label>
+          <input id="liveEmbedInput" type="text" placeholder="https://www.youtube.com/embed/..." />
+          <div class="actions">
+            <button id="addLiveEmbedBtn" type="button">Live</button>
+          </div>
+        </section>
+
+        <section id="sidebarSettingsPanel" class="tab-panel is-hidden">
+          <label for="deviceFriendlyInput">Nome amigavel da TV selecionada</label>
+          <div class="row">
+            <input id="deviceFriendlyInput" type="text" placeholder="Ex: Cliente Loja Centro" />
+            <button id="saveDeviceBtn" class="btn-secondary" type="button">Salvar TV</button>
+          </div>
+
+          <label for="deviceIdInput">ID interno da TV</label>
+          <input id="deviceIdInput" type="text" readonly />
+
+          <label for="deviceEndpointInput">URL para configurar no Fully Kiosk</label>
+          <input id="deviceEndpointInput" type="text" readonly />
+          <div class="small">Use esta URL como pagina inicial da TV no Fully Kiosk para o cliente selecionado.</div>
+
+          <hr class="section-divider">
+
+          <h2>Fully Cloud</h2>
+          <label style="display:flex; align-items:center; gap:8px; color:var(--text); margin-bottom:10px;">
+            <input id="deviceFullyEnabledInput" type="checkbox" style="width:auto; margin:0;" />
+            Ativar integracao com Fully Cloud nesta TV
+          </label>
+
+          <label style="display:flex; align-items:center; gap:8px; color:var(--text); margin-bottom:10px;">
+            <input id="deviceFullyAudioEnabledInput" type="checkbox" style="width:auto; margin:0;" checked />
+            Manter audio ligado nesta TV
+          </label>
+
+          <label for="deviceFullyIdInput">Device ID do Fully Cloud</label>
+          <input id="deviceFullyIdInput" type="text" placeholder="Ex: 3573dea0-f2d4b6b7" />
+
+          <label for="deviceFullyManifestInput">URL do manifesto WiseTV para o Fully</label>
+          <div class="row">
+            <input id="deviceFullyManifestInput" type="text" readonly />
+            <button id="openFullyManifestBtn" class="btn-secondary" type="button">Abrir</button>
+          </div>
+
+          <label for="deviceFullySettingsInput">URL do fully-video-settings.json</label>
+          <div class="row">
+            <input id="deviceFullySettingsInput" type="text" readonly />
+            <button id="openFullySettingsBtn" class="btn-secondary" type="button">Abrir</button>
+          </div>
+
+          <div class="actions stack-actions">
+            <button id="syncFullyBtn" class="btn-ok" type="button">Sincronizar com Fully Cloud</button>
+          </div>
+          <div id="deviceFullyHint" class="small">A sincronizacao automatica sera liberada quando o WiseTV tiver o Device ID da TV e as credenciais da API do Fully Cloud.</div>
+
+          <div class="actions stack-actions" style="margin-top:14px;">
+            <button id="previewBtn" class="btn-ok" type="button">Visualizar</button>
+            <button id="deleteDeviceBtn" class="btn-danger" type="button">Remover TV</button>
+          </div>
+
+          <hr class="section-divider">
+
+          <label for="newDeviceFriendlyInput">Nova TV</label>
+          <div class="row">
+            <input id="newDeviceFriendlyInput" type="text" placeholder="Nome amigavel do cliente" />
+            <button id="createDeviceBtn" type="button">Criar TV</button>
+          </div>
+          <div class="small">Novas TVs recebem IDs automaticos no padrao tv01, tv02, tv03...</div>
+
+          <label for="cloneDeviceFriendlyInput" style="margin-top:12px;">Clonar playlist atual em uma nova TV</label>
+          <div class="row">
+            <input id="cloneDeviceFriendlyInput" type="text" placeholder="Nome amigavel da nova TV" />
+            <button id="clonePlaylistBtn" class="btn-secondary" type="button">Clonar playlist</button>
+          </div>
+          <div class="small">Cria uma nova TV com o proximo ID disponivel e copia a playlist da TV selecionada.</div>
+        </section>
 
         <div id="status"></div>
       </aside>
@@ -769,6 +804,10 @@
     const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname.slice(0, -1) : appBase.pathname;
 
     const deviceSelect = document.getElementById("deviceSelect");
+    const sidebarPlaylistTabBtn = document.getElementById("sidebarPlaylistTabBtn");
+    const sidebarSettingsTabBtn = document.getElementById("sidebarSettingsTabBtn");
+    const sidebarPlaylistPanel = document.getElementById("sidebarPlaylistPanel");
+    const sidebarSettingsPanel = document.getElementById("sidebarSettingsPanel");
     const deviceFriendlyInput = document.getElementById("deviceFriendlyInput");
     const deviceIdInput = document.getElementById("deviceIdInput");
     const deviceEndpointInput = document.getElementById("deviceEndpointInput");
@@ -807,6 +846,7 @@
     const clonePlaylistBtn = document.getElementById("clonePlaylistBtn");
     const previewBtn = document.getElementById("previewBtn");
     const deviceFullyEnabledInput = document.getElementById("deviceFullyEnabledInput");
+    const deviceFullyAudioEnabledInput = document.getElementById("deviceFullyAudioEnabledInput");
     const deviceFullyIdInput = document.getElementById("deviceFullyIdInput");
     const deviceFullyManifestInput = document.getElementById("deviceFullyManifestInput");
     const deviceFullySettingsInput = document.getElementById("deviceFullySettingsInput");
@@ -844,6 +884,7 @@
       selectedDevice: "",
       selectedMediaName: "",
       bulkTargetDevices: [],
+      sidebarTab: "playlist",
       playlist: [],
       fullyCloud: {
         api_base: "",
@@ -852,10 +893,10 @@
         public_base_configured: false,
         manifest_ready: false,
         settings_ready: false,
-      sync_ready: false,
-      missing_requirements: [],
-      message: ""
-    },
+        sync_ready: false,
+        missing_requirements: [],
+        message: ""
+      },
       saveTimer: null,
       isSaving: false,
       isSyncingFully: false,
@@ -874,6 +915,14 @@
       syncFullyBtn.textContent = isLoading ? "Sincronizando..." : "Sincronizar com Fully Cloud";
       updateActionStates();
       renderFullyCloudHint();
+    }
+
+    function setSidebarTab(tab) {
+      state.sidebarTab = tab === "settings" ? "settings" : "playlist";
+      sidebarPlaylistTabBtn.classList.toggle("active", state.sidebarTab === "playlist");
+      sidebarSettingsTabBtn.classList.toggle("active", state.sidebarTab === "settings");
+      sidebarPlaylistPanel.classList.toggle("is-hidden", state.sidebarTab !== "playlist");
+      sidebarSettingsPanel.classList.toggle("is-hidden", state.sidebarTab !== "settings");
     }
 
     function setUploadLoading(isLoading) {
@@ -1033,6 +1082,7 @@
       if (!device || typeof device.fully !== "object" || device.fully === null) {
         return {
           enabled: false,
+          audio_enabled: true,
           device_id: "",
           manifest_url: "",
           settings_url: "",
@@ -1215,6 +1265,7 @@
 
       deviceFriendlyInput.disabled = !hasDevice;
       deviceFullyEnabledInput.disabled = !hasDevice;
+      deviceFullyAudioEnabledInput.disabled = !hasDevice || !fullyEnabled;
       deviceFullyIdInput.disabled = !hasDevice;
       saveDeviceBtn.disabled = !hasDevice;
       deleteDeviceBtn.disabled = !hasDevice;
@@ -1433,6 +1484,7 @@
         deviceIdInput.value = "";
         deviceEndpointInput.value = "";
         deviceFullyEnabledInput.checked = false;
+        deviceFullyAudioEnabledInput.checked = true;
         deviceFullyIdInput.value = "";
         deviceFullyManifestInput.value = "";
         deviceFullySettingsInput.value = "";
@@ -1446,6 +1498,7 @@
       deviceFriendlyInput.value = device.friendly_name || device.id;
       deviceIdInput.value = device.id;
       deviceFullyEnabledInput.checked = !!fully.enabled;
+      deviceFullyAudioEnabledInput.checked = fully.audio_enabled !== false;
       deviceFullyIdInput.value = fully.device_id || "";
 
       const playerUrl = new URL("index.html", window.location.href);
@@ -1472,6 +1525,9 @@
       const parts = [];
       if (!fully.enabled) {
         parts.push("Ative a integracao com Fully Cloud para usar export e sincronizacao automatica nesta TV.");
+      }
+      if (fully.enabled && fully.audio_enabled === false) {
+        parts.push("Audio desativado para esta TV. O WiseTV mantem a playlist em loop e ajusta o volume da midia para 0 durante a sincronizacao.");
       }
       if (!fully.device_id) {
         parts.push("Preencha o Device ID exibido no app Fully Video Kiosk desta TV.");
@@ -1666,6 +1722,7 @@
         state.selectedDevice = state.devices[0].id;
       }
 
+      state.bulkTargetDevices = normalizeDeviceList(state.selectedDevice ? [state.selectedDevice] : []);
       deviceSelect.value = state.selectedDevice;
       renderSelectedDeviceDetails();
       renderPlaylistTargetSelection();
@@ -2115,6 +2172,7 @@
     async function loadPlaylist(device) {
       if (!device) {
         state.selectedDevice = "";
+        state.bulkTargetDevices = [];
         state.playlist = [];
         state.playerLogs = [];
         renderDeviceOptions();
@@ -2126,6 +2184,7 @@
 
       const data = await apiGet({ action: "get_playlist", device });
       state.selectedDevice = device;
+      state.bulkTargetDevices = normalizeDeviceList(device ? [device] : []);
       state.playlist = Array.isArray(data.playlist)
         ? data.playlist.map((item) => {
             const rawType = item && item.type ? String(item.type) : "";
@@ -2406,6 +2465,7 @@
           device: state.selectedDevice,
           friendly_name: friendlyName,
           fully_enabled: deviceFullyEnabledInput.checked,
+          fully_audio_enabled: deviceFullyAudioEnabledInput.checked,
           fully_device_id: fullyDeviceId
         });
 
@@ -2697,10 +2757,17 @@
       renderFullyCloudHint();
       updateActionStates();
     });
+    deviceFullyAudioEnabledInput.addEventListener("change", () => {
+      renderFullyCloudHint();
+      updateActionStates();
+    });
     deviceFullyIdInput.addEventListener("input", () => {
       renderFullyCloudHint();
       updateActionStates();
     });
+
+    sidebarPlaylistTabBtn.addEventListener("click", () => setSidebarTab("playlist"));
+    sidebarSettingsTabBtn.addEventListener("click", () => setSidebarTab("settings"));
 
     newDeviceFriendlyInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -2733,6 +2800,7 @@
     (async function init() {
       try {
         registerPwa();
+        setSidebarTab("playlist");
         renderUploadPolicyHint();
         await loadDevices();
         await loadDeviceStatus();

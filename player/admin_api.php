@@ -1451,6 +1451,37 @@ function fully_cloud_remote_request($deviceId, $commandParams, $persistent = tru
     );
 }
 
+function fully_cloud_response_line($response)
+{
+    return isset($response['response'][0]) && is_array($response['response'][0])
+        ? $response['response'][0]
+        : array();
+}
+
+function fully_cloud_response_status($response)
+{
+    $line = fully_cloud_response_line($response);
+    return isset($line['status']) ? trim((string)$line['status']) : '';
+}
+
+function fully_cloud_response_text($response, $fallback = '')
+{
+    $line = fully_cloud_response_line($response);
+    if (isset($line['statustext']) && trim((string)$line['statustext']) !== '') {
+        return trim((string)$line['statustext']);
+    }
+    return trim((string)$fallback);
+}
+
+function fully_cloud_apply_audio_preference($fullyDeviceId, $audioEnabled)
+{
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'setAudioVolume',
+        'stream' => '3',
+        'level' => $audioEnabled ? '100' : '0'
+    ), true, false);
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -1532,6 +1563,7 @@ function normalize_registry_entry($device, $registry)
         'friendly_name' => $friendlyName,
         'created_at' => $createdAt,
         'fully_enabled' => request_flag_enabled(isset($entry['fully_enabled']) ? $entry['fully_enabled'] : false),
+        'fully_audio_enabled' => !isset($entry['fully_audio_enabled']) || request_flag_enabled($entry['fully_audio_enabled']),
         'fully_device_id' => sanitize_fully_device_id(isset($entry['fully_device_id']) ? $entry['fully_device_id'] : ''),
         'fully_last_sync' => fully_cloud_last_sync_from_entry($entry),
         'fully_settings_template_ready' => fully_settings_template_ready_from_entry($entry),
@@ -1762,18 +1794,21 @@ function build_fully_playlist_entries($manifestItems, $settingsTemplate = null)
 
 function build_fully_settings_payload($device, $registry, $settingsTemplate = null)
 {
+    $entry = normalize_registry_entry($device, $registry);
+    $audioEnabled = $entry['fully_audio_enabled'];
+
     if ($settingsTemplate === null) {
-        $entry = array();
+        $entryTemplate = array();
         if (
             isset($registry['devices']) &&
             is_array($registry['devices']) &&
             isset($registry['devices'][$device]) &&
             is_array($registry['devices'][$device])
         ) {
-            $entry = $registry['devices'][$device];
+            $entryTemplate = $registry['devices'][$device];
         }
 
-        $settingsTemplate = fully_settings_template_from_entry($entry);
+        $settingsTemplate = fully_settings_template_from_entry($entryTemplate);
     }
 
     if (!is_array($settingsTemplate) || empty($settingsTemplate)) {
@@ -1803,6 +1838,8 @@ function build_fully_settings_payload($device, $registry, $settingsTemplate = nu
     $settingsPayload['loopPlaylist'] = true;
     $settingsPayload['autoImportSettings'] = true;
     $settingsPayload['autoplayVideos'] = true;
+    $settingsPayload['autoplayAudio'] = $audioEnabled;
+    $settingsPayload['resumeVideoAudio'] = $audioEnabled;
     $settingsPayload['enableFullscreenVideos'] = true;
     $settingsPayload['showPlayControlsForVideo'] = false;
     $settingsPayload['showNameForMedia'] = false;
@@ -1827,6 +1864,7 @@ function build_device_payload($device, $registry, $fullyCloud = null)
         'created_at' => $entry['created_at'],
         'fully' => array(
             'enabled' => $entry['fully_enabled'],
+            'audio_enabled' => $entry['fully_audio_enabled'],
             'device_id' => $entry['fully_device_id'],
             'manifest_url' => build_fully_manifest_export_url($device),
             'settings_url' => build_fully_settings_export_url($device),
@@ -2346,6 +2384,7 @@ if ($method === 'POST' && $action === 'create_device') {
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
         'created_at' => gmdate('c'),
         'fully_enabled' => false,
+        'fully_audio_enabled' => true,
         'fully_device_id' => ''
     );
 
@@ -2387,6 +2426,7 @@ if ($method === 'POST' && $action === 'clone_playlist') {
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
         'created_at' => gmdate('c'),
         'fully_enabled' => false,
+        'fully_audio_enabled' => true,
         'fully_device_id' => ''
     );
 
@@ -2420,6 +2460,9 @@ if ($method === 'POST' && $action === 'update_device') {
     $entry = normalize_registry_entry($device, $registry);
     $friendlyName = sanitize_label(isset($body['friendly_name']) ? $body['friendly_name'] : '');
     $fullyEnabled = request_flag_enabled(isset($body['fully_enabled']) ? $body['fully_enabled'] : $entry['fully_enabled']);
+    $fullyAudioEnabled = !isset($body['fully_audio_enabled'])
+        ? $entry['fully_audio_enabled']
+        : request_flag_enabled($body['fully_audio_enabled']);
     $fullyDeviceId = sanitize_fully_device_id(isset($body['fully_device_id']) ? $body['fully_device_id'] : $entry['fully_device_id']);
     $currentEntry = isset($registry['devices'][$device]) && is_array($registry['devices'][$device]) ? $registry['devices'][$device] : array();
     $lastSync = isset($entry['fully_last_sync']) && is_array($entry['fully_last_sync']) ? $entry['fully_last_sync'] : array();
@@ -2445,6 +2488,7 @@ if ($method === 'POST' && $action === 'update_device') {
         'friendly_name' => $friendlyName !== '' ? $friendlyName : $device,
         'created_at' => $entry['created_at'],
         'fully_enabled' => $fullyEnabled,
+        'fully_audio_enabled' => $fullyAudioEnabled,
         'fully_device_id' => $fullyDeviceId,
         'fully_settings_template' => $template,
         'fully_settings_template_fetched_at' => $templateFetchedAt,
@@ -2564,11 +2608,19 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         json_error(isset($response['error']) ? $response['error'] : 'Falha ao sincronizar com o Fully Cloud.', 502);
     }
 
-    $responseLine = isset($response['response'][0]) && is_array($response['response'][0])
-        ? $response['response'][0]
-        : array();
-    $syncStatus = isset($responseLine['status']) ? trim((string)$responseLine['status']) : 'OK';
-    $syncMessage = isset($responseLine['statustext']) ? trim((string)$responseLine['statustext']) : 'Comando enviado ao Fully Cloud';
+    $syncStatus = fully_cloud_response_status($response);
+    if ($syncStatus === '') {
+        $syncStatus = 'OK';
+    }
+    $syncMessage = fully_cloud_response_text($response, 'Comando enviado ao Fully Cloud');
+
+    $audioResponse = fully_cloud_apply_audio_preference($entry['fully_device_id'], $entry['fully_audio_enabled']);
+    if (!$audioResponse['ok'] || strcasecmp(fully_cloud_response_status($audioResponse), 'Error') === 0) {
+        $audioWarning = fully_cloud_response_text($audioResponse, 'Nao foi possivel ajustar o audio no Fully Cloud.');
+        if ($audioWarning !== '') {
+            $syncMessage .= ' Audio: ' . $audioWarning;
+        }
+    }
 
     $registry = update_device_sync_state($registry, $device, $syncStatus, $syncMessage, $manifest['playlist_hash']);
     if (!save_device_registry($registry)) {
