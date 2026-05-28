@@ -1684,6 +1684,36 @@ function build_fully_wallpaper_page_url($device)
     ));
 }
 
+function build_fully_wallpaper_media_url($wallpaperMedia)
+{
+    $name = sanitize_wallpaper_media_name($wallpaperMedia);
+    if ($name === '') {
+        return '';
+    }
+
+    if (!is_file(MIDIAS_DIR . '/' . $name)) {
+        return '';
+    }
+
+    return absolute_app_url(media_url_for_name($name));
+}
+
+function build_fully_wallpaper_url($device, $registry = null)
+{
+    $wallpaperMedia = '';
+    if (is_array($registry)) {
+        $entry = normalize_registry_entry($device, $registry);
+        $wallpaperMedia = isset($entry['fully_wallpaper_media']) ? $entry['fully_wallpaper_media'] : '';
+    }
+
+    $mediaUrl = build_fully_wallpaper_media_url($wallpaperMedia);
+    if ($mediaUrl !== '') {
+        return $mediaUrl;
+    }
+
+    return build_fully_wallpaper_page_url($device);
+}
+
 function build_fully_settings_export_url($device)
 {
     $params = array(
@@ -1896,7 +1926,7 @@ function build_fully_settings_payload($device, $registry, $settingsTemplate = nu
     $settingsPayload['autoplayAudio'] = $audioEnabled;
     $settingsPayload['resumeVideoAudio'] = $audioEnabled;
     $settingsPayload['enableFullscreenVideos'] = true;
-    $settingsPayload['wallpaperURL'] = build_fully_wallpaper_page_url($device);
+    $settingsPayload['wallpaperURL'] = build_fully_wallpaper_url($device, $registry);
     $settingsPayload['showThrobberForMedia'] = false;
     $settingsPayload['showPlayControlsForVideo'] = false;
     $settingsPayload['showNameForMedia'] = false;
@@ -1923,7 +1953,7 @@ function build_device_payload($device, $registry, $fullyCloud = null)
             'enabled' => $entry['fully_enabled'],
             'audio_enabled' => $entry['fully_audio_enabled'],
             'wallpaper_media' => $entry['fully_wallpaper_media'],
-            'wallpaper_url' => build_fully_wallpaper_page_url($device),
+            'wallpaper_url' => build_fully_wallpaper_url($device, $registry),
             'device_id' => $entry['fully_device_id'],
             'manifest_url' => build_fully_manifest_export_url($device),
             'settings_url' => build_fully_settings_export_url($device),
