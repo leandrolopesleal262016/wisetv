@@ -1775,8 +1775,13 @@ function build_fully_playlist_entries($manifestItems, $settingsTemplate = null)
         }
 
         $entry = fully_playlist_item_defaults($baseItem);
+        $entry['type'] = $type === 'video' ? 1 : 2;
         $entry['url'] = isset($item['url']) ? (string)$item['url'] : '';
+        $entry['loopItem'] = false;
+        $entry['loopFile'] = false;
         $entry['fileOrder'] = (int)$index;
+        $entry['nextItemOnTouch'] = false;
+        $entry['nextFileOnTouch'] = false;
         $entry['nextItemTimer'] = 0;
         $entry['nextImageFileTimer'] = 0;
         $entry['nextVideoFileTimer'] = 0;
