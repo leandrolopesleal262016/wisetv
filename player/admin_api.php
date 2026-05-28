@@ -1947,6 +1947,7 @@ function build_fully_settings_payload($device, $registry, $settingsTemplate = nu
     $settingsPayload['autoplayAudio'] = $audioEnabled;
     $settingsPayload['resumeVideoAudio'] = $audioEnabled;
     $settingsPayload['enableFullscreenVideos'] = true;
+    $settingsPayload['startURL'] = build_fully_wallpaper_page_url($device);
     $settingsPayload['wallpaperURL'] = build_fully_wallpaper_url($device, $registry);
     $settingsPayload['showThrobberForMedia'] = false;
     $settingsPayload['showPlayControlsForVideo'] = false;
@@ -2760,6 +2761,15 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         $syncStatus = 'OK';
     }
     $syncMessage = fully_cloud_response_text($response, 'Comando enviado ao Fully Cloud');
+
+    $startUrl = build_fully_wallpaper_page_url($device);
+    $startUrlResponse = fully_cloud_set_string_setting($entry['fully_device_id'], 'startURL', $startUrl);
+    if (!$startUrlResponse['ok'] || strcasecmp(fully_cloud_response_status($startUrlResponse), 'Error') === 0) {
+        $startUrlWarning = fully_cloud_response_text($startUrlResponse, 'Nao foi possivel gravar o Start URL no Fully Cloud.');
+        if ($startUrlWarning !== '') {
+            $syncMessage .= ' Start URL: ' . $startUrlWarning;
+        }
+    }
 
     $wallpaperUrl = build_fully_wallpaper_url($device, $registry);
     $wallpaperResponse = fully_cloud_set_string_setting($entry['fully_device_id'], 'wallpaperURL', $wallpaperUrl);
