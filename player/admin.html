@@ -694,6 +694,12 @@
 
           <hr class="section-divider">
 
+          <label for="deviceFullyWallpaperSelect">Imagem entre videos (Wallpaper do Fully)</label>
+          <select id="deviceFullyWallpaperSelect"></select>
+          <div class="small">Escolha a imagem da TV atual. Sem imagem escolhida, o Fully usa um fundo preto limpo entre os videos.</div>
+
+          <hr class="section-divider">
+
           <div class="actions stack-actions">
             <button id="syncFullyBtn" class="btn-ok" type="button">Sincronizar com Fully Cloud</button>
           </div>
@@ -726,10 +732,6 @@
             <input id="deviceFullyAudioEnabledInput" type="checkbox" style="width:auto; margin:0;" checked />
             Manter audio ligado nesta TV
           </label>
-
-          <label for="deviceFullyWallpaperSelect">Wallpaper do Fully entre videos</label>
-          <select id="deviceFullyWallpaperSelect"></select>
-          <div class="small">Suba uma imagem na biblioteca do WiseTV e selecione aqui. Sem imagem escolhida, o fundo entre videos fica preto sem texto.</div>
 
           <label for="deviceFullyIdInput">Device ID do Fully Cloud</label>
           <input id="deviceFullyIdInput" type="text" placeholder="Ex: 3573dea0-f2d4b6b7" />
@@ -888,6 +890,8 @@
       },
       deviceStatus: [],
       playerLogs: [],
+      playlistCache: {},
+      playerLogsCache: {},
       selectedDevice: "",
       selectedMediaName: "",
       bulkTargetDevices: [],
@@ -907,6 +911,10 @@
       saveTimer: null,
       isSaving: false,
       isSyncingFully: false,
+      isLoadingPlaylist: false,
+      isLoadingPlayerLogs: false,
+      playlistRequestToken: 0,
+      playerLogsRequestToken: 0,
       dragFromIndex: -1
     };
 
@@ -936,6 +944,14 @@
       uploadLoadingEl.classList.toggle("is-visible", !!isLoading);
       uploadInput.disabled = !!isLoading;
       stripAudioInput.disabled = !!isLoading;
+    }
+
+    function clonePlaylistItems(items) {
+      return Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+    }
+
+    function clonePlayerLogs(rows) {
+      return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
     }
 
     function parseApiResponse(text) {
@@ -1850,6 +1866,14 @@
         return;
       }
 
+      if (state.isLoadingPlaylist && !state.playlist.length) {
+        const loading = document.createElement("div");
+        loading.className = "empty";
+        loading.textContent = "Carregando playlist desta TV...";
+        playlistContainer.appendChild(loading);
+        return;
+      }
+
       if (!state.playlist.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
@@ -2107,6 +2131,11 @@
         return;
       }
 
+      if (state.isLoadingPlayerLogs && (!Array.isArray(state.playerLogs) || !state.playerLogs.length)) {
+        playerLogsContainer.textContent = "Carregando incidentes desta TV...";
+        return;
+      }
+
       if (!Array.isArray(state.playerLogs) || !state.playerLogs.length) {
         playerLogsContainer.textContent = "Nenhum incidente recente registrado para esta TV.";
         return;
@@ -2178,21 +2207,101 @@
       playerLogsContainer.appendChild(table);
     }
 
-    async function loadPlayerLogs(device = state.selectedDevice) {
+    async function loadPlayerLogs(device = state.selectedDevice, options = {}) {
+      const { requestToken = null, silent = false } = options;
       if (!device) {
         state.playerLogs = [];
+        state.isLoadingPlayerLogs = false;
         renderPlayerLogs();
         return;
       }
 
-      const data = await apiGet({
-        action: "list_player_logs",
-        device,
-        limit: 40,
-        severity: "warn,error"
-      });
-      state.playerLogs = Array.isArray(data.logs) ? data.logs : [];
+      if (device === state.selectedDevice && !silent) {
+        state.isLoadingPlayerLogs = true;
+        renderPlayerLogs();
+      }
+
+      try {
+        const data = await apiGet({
+          action: "list_player_logs",
+          device,
+          limit: 40,
+          severity: "warn,error"
+        });
+
+        if (requestToken !== null && requestToken !== state.playerLogsRequestToken) {
+          return;
+        }
+
+        const logs = Array.isArray(data.logs) ? data.logs : [];
+        state.playerLogsCache[device] = clonePlayerLogs(logs);
+
+        if (device !== state.selectedDevice) {
+          return;
+        }
+
+        state.playerLogs = clonePlayerLogs(logs);
+        state.isLoadingPlayerLogs = false;
+        renderPlayerLogs();
+      } catch (error) {
+        if (requestToken !== null && requestToken !== state.playerLogsRequestToken) {
+          return;
+        }
+        if (device === state.selectedDevice) {
+          state.isLoadingPlayerLogs = false;
+          renderPlayerLogs();
+        }
+        throw error;
+      }
+    }
+
+    async function switchSelectedDevice(device) {
+      if (!device) {
+        await loadPlaylist("");
+        return;
+      }
+
+      state.selectedDevice = device;
+      setBulkTargetDevices([device]);
+      renderSelectedDeviceDetails();
+
+      const cachedPlaylist = state.playlistCache[device];
+      state.playlist = cachedPlaylist ? clonePlaylistItems(cachedPlaylist) : [];
+      state.isLoadingPlaylist = !cachedPlaylist;
+      renderPlaylist();
+
+      const cachedLogs = state.playerLogsCache[device];
+      state.playerLogs = cachedLogs ? clonePlayerLogs(cachedLogs) : [];
+      state.isLoadingPlayerLogs = !cachedLogs;
       renderPlayerLogs();
+
+      const playlistToken = ++state.playlistRequestToken;
+      const logsToken = ++state.playerLogsRequestToken;
+      const label = getDeviceLabel(getDeviceRecord(device)) || device;
+
+      if (!cachedPlaylist || !cachedLogs) {
+        setStatus(`Carregando ${label}...`, false, true);
+      }
+
+      const results = await Promise.allSettled([
+        loadPlaylist(device, { showStatus: false, requestToken: playlistToken, silent: !!cachedPlaylist }),
+        loadPlayerLogs(device, { requestToken: logsToken, silent: !!cachedLogs })
+      ]);
+
+      if (state.selectedDevice !== device || playlistToken !== state.playlistRequestToken || logsToken !== state.playerLogsRequestToken) {
+        return;
+      }
+
+      const failure = results.find((entry) => entry.status === "rejected");
+      if (failure) {
+        state.isLoadingPlaylist = false;
+        state.isLoadingPlayerLogs = false;
+        renderPlaylist();
+        renderPlayerLogs();
+        throw failure.reason instanceof Error ? failure.reason : new Error("Falha ao carregar a TV selecionada.");
+      }
+
+      setStatus(`Playlist carregada para ${label}.`);
     }
 
     async function loadMedia(preferredMediaName = state.selectedMediaName) {
@@ -2219,24 +2328,9 @@
       renderMediaOptions();
     }
 
-    async function loadPlaylist(device) {
-      if (!device) {
-        state.selectedDevice = "";
-        state.bulkTargetDevices = [];
-        state.playlist = [];
-        state.playerLogs = [];
-        renderDeviceOptions();
-        renderPlaylist();
-        renderPlayerLogs();
-        setStatus("");
-        return;
-      }
-
-      const data = await apiGet({ action: "get_playlist", device });
-      state.selectedDevice = device;
-      state.bulkTargetDevices = normalizeDeviceList(device ? [device] : []);
-      state.playlist = Array.isArray(data.playlist)
-        ? data.playlist.map((item) => {
+    function normalizePlaylistForState(items) {
+      return Array.isArray(items)
+        ? items.map((item) => {
             const rawType = item && item.type ? String(item.type) : "";
             const type = ["image", "video", "embed", "youtube"].includes(rawType) ? rawType : "video";
             const url = (type === "embed" || type === "youtube")
@@ -2255,14 +2349,60 @@
             return normalized;
           }).filter((item) => !!item.url)
         : [];
+    }
 
-      renderDeviceOptions();
-      renderPlaylist();
-      loadPlayerLogs(device).catch(() => {
+    async function loadPlaylist(device, options = {}) {
+      const { showStatus = true, requestToken = null, silent = false } = options;
+      if (!device) {
+        state.selectedDevice = "";
+        state.bulkTargetDevices = [];
+        state.playlist = [];
         state.playerLogs = [];
+        state.isLoadingPlaylist = false;
+        state.isLoadingPlayerLogs = false;
+        renderDeviceOptions();
+        renderPlaylist();
         renderPlayerLogs();
-      });
-      setStatus(`Playlist carregada para ${getDeviceLabel(getDeviceRecord(device)) || device}.`);
+        setStatus("");
+        return;
+      }
+
+      if (device === state.selectedDevice && !silent) {
+        state.isLoadingPlaylist = true;
+        renderPlaylist();
+      }
+
+      try {
+        const data = await apiGet({ action: "get_playlist", device });
+
+        if (requestToken !== null && requestToken !== state.playlistRequestToken) {
+          return;
+        }
+
+        const playlist = normalizePlaylistForState(data.playlist);
+        state.playlistCache[device] = clonePlaylistItems(playlist);
+
+        if (device !== state.selectedDevice) {
+          return;
+        }
+
+        state.playlist = clonePlaylistItems(playlist);
+        state.isLoadingPlaylist = false;
+        renderPlaylist();
+
+        if (showStatus) {
+          setStatus(`Playlist carregada para ${getDeviceLabel(getDeviceRecord(device)) || device}.`);
+        }
+      } catch (error) {
+        if (requestToken !== null && requestToken !== state.playlistRequestToken) {
+          return;
+        }
+        if (device === state.selectedDevice) {
+          state.isLoadingPlaylist = false;
+          renderPlaylist();
+        }
+        throw error;
+      }
     }
 
     function addSelectedMedia() {
@@ -2391,7 +2531,7 @@
         }
 
         if (bulkResult && bulkResult.count > 0 && state.selectedDevice && bulkResult.devices.includes(state.selectedDevice)) {
-          await loadPlaylist(state.selectedDevice);
+          await loadPlaylist(state.selectedDevice, { showStatus: false });
         }
 
         const videoMeta = analysis && analysis.metadata
@@ -2423,18 +2563,23 @@
       }
     }
 
-    async function savePlaylistAuto(statusMessage) {
-      if (!state.selectedDevice || state.isSaving) return;
+    async function savePlaylistAuto(device = state.selectedDevice, playlistSnapshot = clonePlaylistItems(state.playlist), statusMessage = "") {
+      if (!device || state.isSaving) return;
       state.isSaving = true;
 
       try {
         await apiPost("save_playlist", {
-          device: state.selectedDevice,
-          playlist: state.playlist
+          device,
+          playlist: playlistSnapshot
         });
-        setStatus(statusMessage || `Playlist de ${state.selectedDevice} salva automaticamente. TVs atualizam em ate 15 segundos.`);
+        state.playlistCache[device] = clonePlaylistItems(playlistSnapshot);
+        if (device === state.selectedDevice) {
+          setStatus(statusMessage || `Playlist de ${device} salva automaticamente. TVs atualizam em ate 15 segundos.`);
+        }
       } catch (error) {
-        setStatus(error.message, true);
+        if (device === state.selectedDevice) {
+          setStatus(error.message, true);
+        }
       } finally {
         state.isSaving = false;
       }
@@ -2442,7 +2587,12 @@
 
     function scheduleAutoSave(statusMessage) {
       if (state.saveTimer) clearTimeout(state.saveTimer);
-      state.saveTimer = setTimeout(() => savePlaylistAuto(statusMessage), 350);
+      const device = state.selectedDevice;
+      const playlistSnapshot = clonePlaylistItems(state.playlist);
+      if (device) {
+        state.playlistCache[device] = clonePlaylistItems(playlistSnapshot);
+      }
+      state.saveTimer = setTimeout(() => savePlaylistAuto(device, playlistSnapshot, statusMessage), 350);
     }
 
     function openPreview() {
@@ -2463,7 +2613,7 @@
         newDeviceFriendlyInput.value = "";
 
         await loadDevices(result.device.id);
-        await loadPlaylist(result.device.id);
+        await switchSelectedDevice(result.device.id);
         await loadDeviceStatus();
 
         setStatus(`TV ${result.device.id} criada com sucesso.`);
@@ -2492,7 +2642,7 @@
 
         cloneDeviceFriendlyInput.value = "";
         await loadDevices(result.device.id);
-        await loadPlaylist(result.device.id);
+        await switchSelectedDevice(result.device.id);
         await loadDeviceStatus();
         setBulkTargetDevices([result.device.id]);
 
@@ -2515,9 +2665,9 @@
         fully_device_id: fullyDeviceId
       });
 
-      await loadDevices(state.selectedDevice);
-      await loadDeviceStatus();
-      renderSelectedDeviceDetails();
+        await loadDevices(state.selectedDevice);
+        await loadDeviceStatus();
+        renderSelectedDeviceDetails();
     }
 
     async function saveSelectedDeviceName() {
@@ -2617,7 +2767,7 @@
         await loadDeviceStatus();
 
         if (state.selectedDevice) {
-          await loadPlaylist(state.selectedDevice);
+          await switchSelectedDevice(state.selectedDevice);
           setStatus(`TV ${removedDevice} removida com sucesso.`);
         } else {
           state.playlist = [];
@@ -2654,7 +2804,7 @@
         fillMediaRenameInput();
 
         if (state.selectedDevice) {
-          await loadPlaylist(state.selectedDevice);
+          await loadPlaylist(state.selectedDevice, { showStatus: false });
         } else {
           renderPlaylist();
         }
@@ -2684,7 +2834,7 @@
         await loadMedia();
 
         if (state.selectedDevice) {
-          await loadPlaylist(state.selectedDevice);
+          await loadPlaylist(state.selectedDevice, { showStatus: false });
         } else {
           renderPlaylist();
         }
@@ -2739,7 +2889,7 @@
     deviceSelect.addEventListener("change", async () => {
       const device = deviceSelect.value;
       try {
-        await loadPlaylist(device);
+        await switchSelectedDevice(device);
       } catch (error) {
         setStatus(error.message, true);
       }
@@ -2875,7 +3025,7 @@
         }
 
         if (state.selectedDevice) {
-          await loadPlaylist(state.selectedDevice);
+          await switchSelectedDevice(state.selectedDevice);
         } else {
           renderDeviceOptions();
           renderPlaylist();
@@ -2888,7 +3038,7 @@
 
         setInterval(() => {
           loadDeviceStatus().catch(() => {});
-          loadPlayerLogs().catch(() => {});
+          loadPlayerLogs(state.selectedDevice, { silent: true }).catch(() => {});
         }, 30000);
       } catch (error) {
         setStatus(error.message, true);
