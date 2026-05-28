@@ -1482,6 +1482,13 @@ function fully_cloud_apply_audio_preference($fullyDeviceId, $audioEnabled)
     ), true, false);
 }
 
+function fully_cloud_start_playlist($fullyDeviceId)
+{
+    return fully_cloud_remote_request($fullyDeviceId, array(
+        'cmd' => 'playerStart'
+    ), true, false);
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -2613,6 +2620,14 @@ if ($method === 'POST' && $action === 'sync_fully_device') {
         $syncStatus = 'OK';
     }
     $syncMessage = fully_cloud_response_text($response, 'Comando enviado ao Fully Cloud');
+
+    $playerStartResponse = fully_cloud_start_playlist($entry['fully_device_id']);
+    if (!$playerStartResponse['ok'] || strcasecmp(fully_cloud_response_status($playerStartResponse), 'Error') === 0) {
+        $playerWarning = fully_cloud_response_text($playerStartResponse, 'Nao foi possivel reiniciar a playlist no Fully Cloud.');
+        if ($playerWarning !== '') {
+            $syncMessage .= ' Player: ' . $playerWarning;
+        }
+    }
 
     $audioResponse = fully_cloud_apply_audio_preference($entry['fully_device_id'], $entry['fully_audio_enabled']);
     if (!$audioResponse['ok'] || strcasecmp(fully_cloud_response_status($audioResponse), 'Error') === 0) {
