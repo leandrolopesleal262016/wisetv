@@ -1,6 +1,9 @@
 FROM php:8.3-apache
 
-RUN a2enmod rewrite headers expires && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/* && \
+    a2enmod rewrite headers expires && \
     mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
 COPY docker/apache/wisetv.conf /etc/apache2/sites-available/000-default.conf

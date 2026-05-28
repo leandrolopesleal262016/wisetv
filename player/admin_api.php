@@ -44,6 +44,30 @@ if (!defined('MAX_VIDEO_WIDTH')) {
 if (!defined('MAX_VIDEO_HEIGHT')) {
     define('MAX_VIDEO_HEIGHT', 1080);
 }
+if (!defined('NORMALIZED_VIDEO_WIDTH')) {
+    define('NORMALIZED_VIDEO_WIDTH', 1280);
+}
+if (!defined('NORMALIZED_VIDEO_HEIGHT')) {
+    define('NORMALIZED_VIDEO_HEIGHT', 720);
+}
+if (!defined('NORMALIZED_VIDEO_FPS')) {
+    define('NORMALIZED_VIDEO_FPS', 30);
+}
+if (!defined('NORMALIZED_VIDEO_CRF')) {
+    define('NORMALIZED_VIDEO_CRF', 21);
+}
+if (!defined('NORMALIZED_VIDEO_MAXRATE')) {
+    define('NORMALIZED_VIDEO_MAXRATE', '4M');
+}
+if (!defined('NORMALIZED_VIDEO_BUFSIZE')) {
+    define('NORMALIZED_VIDEO_BUFSIZE', '8M');
+}
+if (!defined('NORMALIZED_AUDIO_BITRATE')) {
+    define('NORMALIZED_AUDIO_BITRATE', '128k');
+}
+if (!defined('NORMALIZED_VIDEO_EXTENSION')) {
+    define('NORMALIZED_VIDEO_EXTENSION', 'mp4');
+}
 
 function json_flags($extraFlags = 0)
 {
@@ -215,6 +239,41 @@ function ffprobe_binary_path()
     return find_binary_path(is_windows_host() ? 'ffprobe.exe' : 'ffprobe');
 }
 
+function upload_can_normalize_videos()
+{
+    $ffmpegPath = ffmpeg_binary_path();
+    return shell_exec_available() && is_string($ffmpegPath) && $ffmpegPath !== '';
+}
+
+function upload_can_probe_video_metadata()
+{
+    $ffprobePath = ffprobe_binary_path();
+    return shell_exec_available() && is_string($ffprobePath) && $ffprobePath !== '';
+}
+
+function upload_normalization_profile()
+{
+    return array(
+        'width' => NORMALIZED_VIDEO_WIDTH,
+        'height' => NORMALIZED_VIDEO_HEIGHT,
+        'fps' => NORMALIZED_VIDEO_FPS,
+        'extension' => NORMALIZED_VIDEO_EXTENSION,
+        'video_codec' => 'h264',
+        'audio_codec' => 'aac'
+    );
+}
+
+function upload_normalization_profile_label($removeAudio = false)
+{
+    return sprintf(
+        'MP4/H.264 %dx%d %dfps%s',
+        NORMALIZED_VIDEO_WIDTH,
+        NORMALIZED_VIDEO_HEIGHT,
+        NORMALIZED_VIDEO_FPS,
+        $removeAudio ? ' sem audio' : ' com AAC'
+    );
+}
+
 function upload_capabilities()
 {
     static $capabilities = null;
@@ -224,12 +283,22 @@ function upload_capabilities()
 
     $ffmpegPath = ffmpeg_binary_path();
     $ffprobePath = ffprobe_binary_path();
+    $canNormalizeVideos = upload_can_normalize_videos();
+    $canProbeVideoMetadata = upload_can_probe_video_metadata();
     $capabilities = array(
         'ffmpeg_available' => is_string($ffmpegPath) && $ffmpegPath !== '',
         'ffprobe_available' => is_string($ffprobePath) && $ffprobePath !== '',
-        'auto_convert_above_hd' => (is_string($ffmpegPath) && $ffmpegPath !== '') && (is_string($ffprobePath) && $ffprobePath !== ''),
+        'auto_convert_above_hd' => $canNormalizeVideos,
+        'normalize_videos_on_upload' => $canNormalizeVideos,
+        'can_strip_audio' => $canNormalizeVideos,
         'video_max_width' => MAX_VIDEO_WIDTH,
-        'video_max_height' => MAX_VIDEO_HEIGHT
+        'video_max_height' => MAX_VIDEO_HEIGHT,
+        'can_probe_video_metadata' => $canProbeVideoMetadata,
+        'normalized_video_width' => NORMALIZED_VIDEO_WIDTH,
+        'normalized_video_height' => NORMALIZED_VIDEO_HEIGHT,
+        'normalized_video_fps' => NORMALIZED_VIDEO_FPS,
+        'normalized_video_extension' => NORMALIZED_VIDEO_EXTENSION,
+        'normalization_profile_label' => upload_normalization_profile_label(false)
     );
 
     return $capabilities;
@@ -276,13 +345,6 @@ function video_metadata_from_file($path)
     );
 }
 
-function video_exceeds_hd($metadata)
-{
-    return is_array($metadata)
-        && isset($metadata['width'], $metadata['height'])
-        && (((int)$metadata['width']) > MAX_VIDEO_WIDTH || ((int)$metadata['height']) > MAX_VIDEO_HEIGHT);
-}
-
 function unique_media_name($filename)
 {
     $safeName = sanitize_upload_filename($filename);
@@ -300,9 +362,59 @@ function unique_media_name($filename)
     return $nameOnly . '_' . date('Ymd_His') . ($extOnly !== '' ? '.' . $extOnly : '');
 }
 
-function convert_video_to_hd($sourcePath, $targetPath)
+function unique_media_name_for_path($filename, $ignorePath = null)
 {
-    if (!shell_exec_available()) {
+    $safeName = sanitize_upload_filename($filename);
+    if ($safeName === '') {
+        return '';
+    }
+
+    $target = MIDIAS_DIR . '/' . $safeName;
+    $normalizedTarget = str_replace('\\', '/', $target);
+    $normalizedIgnore = is_string($ignorePath) ? str_replace('\\', '/', $ignorePath) : null;
+
+    if (!file_exists($target) || ($normalizedIgnore !== null && $normalizedTarget === $normalizedIgnore)) {
+        return $safeName;
+    }
+
+    $nameOnly = pathinfo($safeName, PATHINFO_FILENAME);
+    $extOnly = pathinfo($safeName, PATHINFO_EXTENSION);
+    return $nameOnly . '_' . date('Ymd_His') . ($extOnly !== '' ? '.' . $extOnly : '');
+}
+
+function request_flag_enabled($value)
+{
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    $normalized = strtolower(trim((string)$value));
+    return in_array($normalized, array('1', 'true', 'on', 'yes', 'sim'), true);
+}
+
+function normalized_video_filename($currentName, $currentPath)
+{
+    $baseName = sanitize_upload_filename(pathinfo($currentName, PATHINFO_FILENAME));
+    if ($baseName === '') {
+        $baseName = 'video';
+    }
+
+    $candidate = $baseName . '.' . NORMALIZED_VIDEO_EXTENSION;
+    $ignorePath = strtolower(pathinfo($currentName, PATHINFO_EXTENSION)) === NORMALIZED_VIDEO_EXTENSION
+        ? $currentPath
+        : null;
+
+    return unique_media_name_for_path($candidate, $ignorePath);
+}
+
+function temporary_normalized_video_path()
+{
+    return MIDIAS_DIR . '/.wisetv_' . uniqid('', true) . '.' . NORMALIZED_VIDEO_EXTENSION;
+}
+
+function normalize_video_for_signage($sourcePath, $targetPath, $removeAudio = false)
+{
+    if (!upload_can_normalize_videos()) {
         return false;
     }
 
@@ -311,10 +423,36 @@ function convert_video_to_hd($sourcePath, $targetPath)
         return false;
     }
 
+    $videoFilter = 'scale=w=' . NORMALIZED_VIDEO_WIDTH
+        . ':h=' . NORMALIZED_VIDEO_HEIGHT
+        . ':force_original_aspect_ratio=decrease:force_divisible_by=2,fps='
+        . NORMALIZED_VIDEO_FPS;
+
     $command = escapeshellarg($ffmpegPath)
         . ' -y -i ' . escapeshellarg($sourcePath)
-        . ' -vf "scale=w=' . MAX_VIDEO_WIDTH . ':h=' . MAX_VIDEO_HEIGHT . ':force_original_aspect_ratio=decrease:force_divisible_by=2"'
-        . ' -c:v libx264 -preset fast -crf 23 -c:a aac -movflags +faststart '
+        . ' -map 0:v:0';
+
+    if (!$removeAudio) {
+        $command .= ' -map 0:a:0?';
+    }
+
+    $command .= ' -sn -dn'
+        . ' -vf ' . escapeshellarg($videoFilter)
+        . ' -c:v libx264'
+        . ' -profile:v main'
+        . ' -pix_fmt yuv420p'
+        . ' -preset medium'
+        . ' -crf ' . (int)NORMALIZED_VIDEO_CRF
+        . ' -maxrate ' . escapeshellarg(NORMALIZED_VIDEO_MAXRATE)
+        . ' -bufsize ' . escapeshellarg(NORMALIZED_VIDEO_BUFSIZE);
+
+    if ($removeAudio) {
+        $command .= ' -an';
+    } else {
+        $command .= ' -c:a aac -b:a ' . escapeshellarg(NORMALIZED_AUDIO_BITRATE) . ' -ac 2';
+    }
+
+    $command .= ' -movflags +faststart '
         . escapeshellarg($targetPath)
         . (is_windows_host() ? ' 2>NUL' : ' 2>/dev/null');
 
@@ -1738,35 +1876,53 @@ if ($method === 'POST' && $action === 'upload_media') {
     $capabilities = upload_capabilities();
     $videoMetadata = null;
     $convertedToHd = false;
+    $videoNormalized = false;
+    $audioRemoved = false;
+    $normalizationWarning = '';
 
     if ($type === 'video') {
+        $stripAudio = request_flag_enabled(isset($_POST['strip_audio']) ? $_POST['strip_audio'] : false);
         $videoMetadata = video_metadata_from_file($target);
 
-        if (video_exceeds_hd($videoMetadata)) {
-            if (!$capabilities['auto_convert_above_hd']) {
+        if ($capabilities['normalize_videos_on_upload']) {
+            $normalizedName = normalized_video_filename($safeName, $target);
+            $normalizedTempPath = temporary_normalized_video_path();
+            if (!normalize_video_for_signage($target, $normalizedTempPath, $stripAudio)) {
+                @unlink($normalizedTempPath);
                 @unlink($target);
-                json_error('Este video passa de HD (1920x1080) e o servidor atual nao tem ffmpeg para converter automaticamente.', 400);
+                json_error('Nao foi possivel padronizar o video enviado para o perfil da plataforma.', 500);
             }
 
-            $convertedExt = 'mp4';
-            $convertedBase = pathinfo($safeName, PATHINFO_FILENAME);
-            if (strtolower(pathinfo($safeName, PATHINFO_EXTENSION)) === 'mp4') {
-                $convertedBase .= '__hd';
-            }
+            $finalPath = MIDIAS_DIR . '/' . $normalizedName;
+            $sameOutputPath = str_replace('\\', '/', $finalPath) === str_replace('\\', '/', $target);
 
-            $convertedName = unique_media_name($convertedBase . '.' . $convertedExt);
-            $convertedPath = MIDIAS_DIR . '/' . $convertedName;
-
-            if (!convert_video_to_hd($target, $convertedPath)) {
+            if ($sameOutputPath) {
+                if (!@unlink($target)) {
+                    @unlink($normalizedTempPath);
+                    json_error('Nao foi possivel substituir o video original pela versao padronizada.', 500);
+                }
+                if (!@rename($normalizedTempPath, $finalPath)) {
+                    @unlink($normalizedTempPath);
+                    json_error('Nao foi possivel salvar o video padronizado.', 500);
+                }
+            } else {
+                if (!@rename($normalizedTempPath, $finalPath)) {
+                    @unlink($normalizedTempPath);
+                    json_error('Nao foi possivel salvar o video padronizado.', 500);
+                }
                 @unlink($target);
-                json_error('Nao foi possivel converter o video para HD', 500);
             }
 
-            @unlink($target);
-            $safeName = $convertedName;
-            $target = $convertedPath;
+            $safeName = $normalizedName;
+            $target = $finalPath;
+            $videoNormalized = true;
             $convertedToHd = true;
+            $audioRemoved = $stripAudio;
             $videoMetadata = video_metadata_from_file($target);
+        } elseif ($stripAudio) {
+            $normalizationWarning = 'Servidor sem ffmpeg: o audio foi mantido e o video foi salvo sem padronizacao.';
+        } else {
+            $normalizationWarning = 'Servidor sem ffmpeg: o video foi salvo no formato original, sem padronizacao.';
         }
     }
 
@@ -1776,6 +1932,11 @@ if ($method === 'POST' && $action === 'upload_media') {
         'type' => $type,
         'url' => media_url_for_name($safeName),
         'converted_to_hd' => $convertedToHd,
+        'video_normalized' => $videoNormalized,
+        'audio_removed' => $audioRemoved,
+        'normalization_warning' => $normalizationWarning,
+        'normalization_profile' => upload_normalization_profile(),
+        'normalization_profile_label' => upload_normalization_profile_label($audioRemoved),
         'video_metadata' => $videoMetadata,
         'capabilities' => $capabilities
     ));

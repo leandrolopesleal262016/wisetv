@@ -661,6 +661,11 @@
 
         <label for="uploadInput">Enviar nova midia (salva apenas na pasta /midias)</label>
         <input id="uploadInput" type="file" accept=".jpeg,.jpg,.png,.gif,.webp,.mp4,.webm,.mov,.m4v" />
+        <label class="small" for="stripAudioInput">
+          <input id="stripAudioInput" type="checkbox" />
+          Remover audio ao padronizar o video
+        </label>
+        <div class="small">Use quando a TV nao precisa de som. Imagens nao sao afetadas.</div>
         <div id="playlistBulkSection" class="checklist-panel">
           <div class="checklist-header">
             <strong>Ao enviar uma nova midia, adicionar tambem em:</strong>
@@ -748,6 +753,7 @@
     const durationWrap = document.getElementById("durationWrap");
     const durationHint = document.getElementById("durationHint");
     const uploadInput = document.getElementById("uploadInput");
+    const stripAudioInput = document.getElementById("stripAudioInput");
     const uploadLoadingEl = document.getElementById("uploadLoading");
     const uploadPolicyHint = document.getElementById("uploadPolicyHint");
     const playlistBulkSection = document.getElementById("playlistBulkSection");
@@ -785,8 +791,16 @@
         ffmpeg_available: false,
         ffprobe_available: false,
         auto_convert_above_hd: false,
+        normalize_videos_on_upload: false,
+        can_strip_audio: false,
         video_max_width: 1920,
-        video_max_height: 1080
+        video_max_height: 1080,
+        can_probe_video_metadata: false,
+        normalized_video_width: 1280,
+        normalized_video_height: 720,
+        normalized_video_fps: 30,
+        normalized_video_extension: "mp4",
+        normalization_profile_label: "MP4/H.264 1280x720 30fps com AAC"
       },
       deviceStatus: [],
       playerLogs: [],
@@ -809,6 +823,7 @@
     function setUploadLoading(isLoading) {
       uploadLoadingEl.classList.toggle("is-visible", !!isLoading);
       uploadInput.disabled = !!isLoading;
+      stripAudioInput.disabled = !!isLoading;
     }
 
     function parseApiResponse(text) {
@@ -1031,15 +1046,16 @@
     }
 
     function renderUploadPolicyHint() {
-      const width = Number(state.uploadCapabilities.video_max_width || 1920);
-      const height = Number(state.uploadCapabilities.video_max_height || 1080);
+      const width = Number(state.uploadCapabilities.normalized_video_width || 1280);
+      const height = Number(state.uploadCapabilities.normalized_video_height || 720);
+      const fps = Number(state.uploadCapabilities.normalized_video_fps || 30);
 
-      if (state.uploadCapabilities.auto_convert_above_hd) {
-        uploadPolicyHint.textContent = `Videos acima de ${width}x${height} serao convertidos automaticamente para HD no upload.`;
+      if (state.uploadCapabilities.normalize_videos_on_upload) {
+        uploadPolicyHint.textContent = `Todo video enviado sera padronizado para MP4/H.264 ${width}x${height} a ${fps} fps. Marque a opcao para remover o audio quando nao precisar de som.`;
         return;
       }
 
-      uploadPolicyHint.textContent = `Videos acima de ${width}x${height} nao devem ser enviados neste servidor, porque o ffmpeg nao esta disponivel para conversao automatica.`;
+      uploadPolicyHint.textContent = "Servidor sem ffmpeg: os videos serao salvos como forem enviados, sem padronizacao automatica nem remocao de audio.";
     }
 
     function renderPlaylistTargetSelection() {
@@ -1438,20 +1454,16 @@
         return { metadata: null, willConvert: false };
       }
 
-      const metadata = await inspectLocalVideoFile(file);
-      const maxWidth = Number(state.uploadCapabilities.video_max_width || 1920);
-      const maxHeight = Number(state.uploadCapabilities.video_max_height || 1080);
-      const exceedsHd = metadata.width > maxWidth || metadata.height > maxHeight;
-
-      if (!exceedsHd) {
-        return { metadata, willConvert: false };
+      let metadata = null;
+      try {
+        metadata = await inspectLocalVideoFile(file);
+      } catch (error) {
       }
 
-      if (state.uploadCapabilities.auto_convert_above_hd) {
-        return { metadata, willConvert: true };
-      }
-
-      throw new Error(`O video selecionado tem ${metadata.width}x${metadata.height}. Neste servidor ele precisa estar em no maximo ${maxWidth}x${maxHeight}, porque o ffmpeg nao esta disponivel para conversao automatica.`);
+      return {
+        metadata,
+        willConvert: !!state.uploadCapabilities.normalize_videos_on_upload
+      };
     }
 
     async function loadVideoDurations(media) {
@@ -2076,6 +2088,7 @@
         const analysis = await validateUploadCandidate(file);
         const formData = new FormData();
         formData.append("media_file", file);
+        formData.append("strip_audio", stripAudioInput.checked ? "1" : "0");
         const result = await apiPostForm("upload_media", formData);
         uploadInput.value = "";
 
@@ -2115,17 +2128,26 @@
         const videoMeta = analysis && analysis.metadata
           ? ` (${analysis.metadata.width}x${analysis.metadata.height})`
           : "";
-        const conversionNote = result.converted_to_hd
-          ? " O video foi convertido automaticamente para HD."
-          : (analysis && analysis.willConvert ? " O video sera ajustado para HD no servidor." : "");
+        const conversionNote = result.video_normalized
+          ? ` Video padronizado para ${result.normalization_profile_label || "o perfil da plataforma"}.`
+          : (analysis && analysis.willConvert ? " O video sera ajustado para o perfil da plataforma no servidor." : "");
+        const audioNote = result.audio_removed
+          ? " Audio removido."
+          : "";
+        const warningNote = result.normalization_warning
+          ? ` ${result.normalization_warning}`
+          : "";
         const bulkNote = bulkResult && bulkResult.count > 0
           ? ` Adicionada em ${bulkResult.count} playlist(s).`
           : "";
 
         if (bulkError) {
-          setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote} Falha ao inserir automaticamente nas playlists: ${bulkError}`.trim(), true);
+          setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote}${audioNote}${warningNote} Falha ao inserir automaticamente nas playlists: ${bulkError}`.trim(), true);
         } else {
-          setStatus(`Upload concluido: ${result.name}${videoMeta}.${conversionNote}${bulkNote}`.trim());
+          setStatus(
+            `Upload concluido: ${result.name}${videoMeta}.${conversionNote}${audioNote}${warningNote}${bulkNote}`.trim(),
+            !!result.normalization_warning
+          );
         }
       } finally {
         setUploadLoading(false);
