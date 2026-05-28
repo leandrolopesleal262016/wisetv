@@ -1030,6 +1030,8 @@
           playlist_hash: "",
           playlist_version: "",
           sync_ready: false,
+          settings_template_ready: false,
+          settings_template_fetched_at: "",
           last_sync_at: "",
           last_sync_status: "",
           last_sync_message: "",
@@ -1200,6 +1202,7 @@
       const fullyEnabled = !!deviceFullyEnabledInput.checked;
       const fullyDeviceId = deviceFullyIdInput.value.trim();
       const fullySettingsReady = !!state.fullyCloud.settings_ready;
+      const fully = getFullyRecord();
 
       deviceFriendlyInput.disabled = !hasDevice;
       deviceFullyEnabledInput.disabled = !hasDevice;
@@ -1209,7 +1212,7 @@
       clonePlaylistBtn.disabled = !hasDevice;
       previewBtn.disabled = !hasDevice;
       openFullyManifestBtn.disabled = !hasDevice || !deviceFullyManifestInput.value.trim();
-      openFullySettingsBtn.disabled = !hasDevice || !fullySettingsReady || !deviceFullySettingsInput.value.trim();
+      openFullySettingsBtn.disabled = !hasDevice || !fullySettingsReady || !fully.settings_template_ready || !deviceFullySettingsInput.value.trim();
       syncFullyBtn.disabled = !hasDevice || !fullyEnabled || !fullyDeviceId || !state.fullyCloud.api_configured || !fullySettingsReady;
 
       addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
@@ -1470,8 +1473,11 @@
       if (missing.includes("public_base_url")) {
         parts.push("Falta configurar WISETV_PUBLIC_BASE_URL para o WiseTV gerar URLs publicas para o Fully.");
       }
-      if (missing.includes("settings_template")) {
-        parts.push("O manifesto ja pode ser exportado, mas o fully-video-settings.json final sera habilitado quando capturarmos os settings reais do device de referencia.");
+      if (fully.enabled && fully.device_id && !fully.settings_template_ready) {
+        parts.push("O manifesto ja esta pronto. O fully-video-settings.json sera liberado automaticamente assim que voce sincronizar ou ler os settings reais desta TV.");
+      }
+      if (fully.settings_template_fetched_at) {
+        parts.push(`Template do Fully atualizado em ${formatIsoDateTime(fully.settings_template_fetched_at)}.`);
       }
       if (fully.last_sync_at) {
         const statusLabel = fully.last_sync_status ? ` ${fully.last_sync_status}.` : "";
