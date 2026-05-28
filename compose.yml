@@ -16,7 +16,7 @@ services:
       - traefik.http.services.wisetv.loadbalancer.server.port=80
     environment:
       TZ: ${TZ:-America/Sao_Paulo}
-      WISETV_MEDIA_DIR: /srv/wisetv-data/midias
+      WISETV_MEDIA_DIR: /var/www/html/midias
       WISETV_ROOT_PLAYLISTS_DIR: /srv/wisetv-data/root/playlists
       WISETV_ROOT_STATUS_DIR: /srv/wisetv-data/root/status
       WISETV_ROOT_DEVICE_REGISTRY_FILE: /srv/wisetv-data/root/devices.json
@@ -25,7 +25,7 @@ services:
       WISETV_PLAYER_LOGS_DIR: /srv/wisetv-data/player/logs
       WISETV_PLAYER_DEVICE_REGISTRY_FILE: /srv/wisetv-data/player/devices.json
     volumes:
-      - ${APP_DATA_DIR:-./.docker-data}/midias:/srv/wisetv-data/midias
+      - ${APP_DATA_DIR:-./.docker-data}/midias:/var/www/html/midias
       - ${APP_DATA_DIR:-./.docker-data}/root/playlists:/srv/wisetv-data/root/playlists
       - ${APP_DATA_DIR:-./.docker-data}/root/status:/srv/wisetv-data/root/status
       - ${APP_DATA_DIR:-./.docker-data}/root/devices.json:/srv/wisetv-data/root/devices.json
