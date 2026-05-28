@@ -2189,7 +2189,7 @@
         action: "list_player_logs",
         device,
         limit: 40,
-        severity: "error"
+        severity: "warn,error"
       });
       state.playerLogs = Array.isArray(data.logs) ? data.logs : [];
       renderPlayerLogs();
@@ -2502,6 +2502,24 @@
       }
     }
 
+    async function persistSelectedDeviceSettings() {
+      const friendlyName = deviceFriendlyInput.value.trim();
+      const fullyDeviceId = deviceFullyIdInput.value.trim();
+
+      await apiPost("update_device", {
+        device: state.selectedDevice,
+        friendly_name: friendlyName,
+        fully_enabled: deviceFullyEnabledInput.checked,
+        fully_audio_enabled: deviceFullyAudioEnabledInput.checked,
+        fully_wallpaper_media: deviceFullyWallpaperSelect.value.trim(),
+        fully_device_id: fullyDeviceId
+      });
+
+      await loadDevices(state.selectedDevice);
+      await loadDeviceStatus();
+      renderSelectedDeviceDetails();
+    }
+
     async function saveSelectedDeviceName() {
       if (!state.selectedDevice) {
         setStatus("Selecione uma TV para editar.", true);
@@ -2509,21 +2527,7 @@
       }
 
       try {
-        const friendlyName = deviceFriendlyInput.value.trim();
-        const fullyDeviceId = deviceFullyIdInput.value.trim();
-        await apiPost("update_device", {
-          device: state.selectedDevice,
-          friendly_name: friendlyName,
-          fully_enabled: deviceFullyEnabledInput.checked,
-          fully_audio_enabled: deviceFullyAudioEnabledInput.checked,
-          fully_wallpaper_media: deviceFullyWallpaperSelect.value.trim(),
-          fully_device_id: fullyDeviceId
-        });
-
-        await loadDevices(state.selectedDevice);
-        await loadDeviceStatus();
-        renderSelectedDeviceDetails();
-
+        await persistSelectedDeviceSettings();
         setStatus(`Dados de ${state.selectedDevice} atualizados.`);
       } catch (error) {
         setStatus(error.message, true);
@@ -2551,6 +2555,7 @@
       try {
         setFullySyncLoading(true);
         setStatus(`Fully Cloud: enviando sincronizacao de ${deviceLabel}...`, false, true);
+        await persistSelectedDeviceSettings();
 
         const result = await apiPost("sync_fully_device", {
           device: state.selectedDevice
