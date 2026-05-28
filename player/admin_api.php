@@ -151,6 +151,20 @@ function sanitize_fully_device_id($value)
     return trim($deviceId);
 }
 
+function sanitize_wallpaper_media_name($value)
+{
+    $name = sanitize_upload_filename($value);
+    if ($name === '') {
+        return '';
+    }
+
+    if (media_type_from_filename($name) !== 'image') {
+        return '';
+    }
+
+    return $name;
+}
+
 function sanitize_upload_filename($filename)
 {
     $filename = basename((string)$filename);
@@ -552,6 +566,17 @@ function current_script_public_url($extraParams = array())
 {
     $scriptName = isset($_SERVER['SCRIPT_NAME']) ? str_replace('\\', '/', (string)$_SERVER['SCRIPT_NAME']) : '/player/admin_api.php';
     $url = absolute_app_url($scriptName);
+    if (!is_array($extraParams) || empty($extraParams)) {
+        return $url;
+    }
+
+    return $url . '?' . http_build_query($extraParams, '', '&', PHP_QUERY_RFC3986);
+}
+
+function player_public_url($path, $extraParams = array())
+{
+    $normalizedPath = '/player/' . ltrim((string)$path, '/');
+    $url = absolute_app_url($normalizedPath);
     if (!is_array($extraParams) || empty($extraParams)) {
         return $url;
     }
@@ -1475,10 +1500,20 @@ function fully_cloud_response_text($response, $fallback = '')
 
 function fully_cloud_apply_audio_preference($fullyDeviceId, $audioEnabled)
 {
+    if ($audioEnabled) {
+        return array(
+            'ok' => true,
+            'response' => array(array(
+                'status' => 'Skipped',
+                'statustext' => 'Volume mantido como esta para evitar ajuste automatico em 100%.'
+            ))
+        );
+    }
+
     return fully_cloud_remote_request($fullyDeviceId, array(
         'cmd' => 'setAudioVolume',
         'stream' => '3',
-        'level' => $audioEnabled ? '100' : '0'
+        'level' => '0'
     ), true, false);
 }
 
@@ -1571,6 +1606,7 @@ function normalize_registry_entry($device, $registry)
         'created_at' => $createdAt,
         'fully_enabled' => request_flag_enabled(isset($entry['fully_enabled']) ? $entry['fully_enabled'] : false),
         'fully_audio_enabled' => !isset($entry['fully_audio_enabled']) || request_flag_enabled($entry['fully_audio_enabled']),
+        'fully_wallpaper_media' => sanitize_wallpaper_media_name(isset($entry['fully_wallpaper_media']) ? $entry['fully_wallpaper_media'] : ''),
         'fully_device_id' => sanitize_fully_device_id(isset($entry['fully_device_id']) ? $entry['fully_device_id'] : ''),
         'fully_last_sync' => fully_cloud_last_sync_from_entry($entry),
         'fully_settings_template_ready' => fully_settings_template_ready_from_entry($entry),
@@ -1639,6 +1675,13 @@ function build_fully_manifest_payload($device, $registry)
             return $item['url'];
         }, $manifestItems))
     );
+}
+
+function build_fully_wallpaper_page_url($device)
+{
+    return player_public_url('wallpaper.php', array(
+        'device' => sanitize_device($device)
+    ));
 }
 
 function build_fully_settings_export_url($device)
@@ -1853,6 +1896,8 @@ function build_fully_settings_payload($device, $registry, $settingsTemplate = nu
     $settingsPayload['autoplayAudio'] = $audioEnabled;
     $settingsPayload['resumeVideoAudio'] = $audioEnabled;
     $settingsPayload['enableFullscreenVideos'] = true;
+    $settingsPayload['wallpaperURL'] = build_fully_wallpaper_page_url($device);
+    $settingsPayload['showThrobberForMedia'] = false;
     $settingsPayload['showPlayControlsForVideo'] = false;
     $settingsPayload['showNameForMedia'] = false;
 
@@ -1877,6 +1922,8 @@ function build_device_payload($device, $registry, $fullyCloud = null)
         'fully' => array(
             'enabled' => $entry['fully_enabled'],
             'audio_enabled' => $entry['fully_audio_enabled'],
+            'wallpaper_media' => $entry['fully_wallpaper_media'],
+            'wallpaper_url' => build_fully_wallpaper_page_url($device),
             'device_id' => $entry['fully_device_id'],
             'manifest_url' => build_fully_manifest_export_url($device),
             'settings_url' => build_fully_settings_export_url($device),
@@ -2023,6 +2070,37 @@ function update_playlists_for_media($oldFilename, $newFilename)
     }
 
     return $result;
+}
+
+function update_device_wallpaper_references($oldFilename, $newFilename)
+{
+    $registry = load_device_registry();
+    if (!isset($registry['devices']) || !is_array($registry['devices'])) {
+        return array('devices_updated' => 0);
+    }
+
+    $updated = 0;
+    foreach ($registry['devices'] as $device => $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+
+        $current = sanitize_wallpaper_media_name(isset($entry['fully_wallpaper_media']) ? $entry['fully_wallpaper_media'] : '');
+        if ($current === '' || strcasecmp($current, $oldFilename) !== 0) {
+            continue;
+        }
+
+        $registry['devices'][$device]['fully_wallpaper_media'] = $newFilename === null
+            ? ''
+            : sanitize_wallpaper_media_name($newFilename);
+        $updated++;
+    }
+
+    if ($updated > 0 && !save_device_registry($registry)) {
+        json_error('Falha ao atualizar wallpapers das TVs apos alterar midia', 500);
+    }
+
+    return array('devices_updated' => $updated);
 }
 
 ensure_directories();
@@ -2397,6 +2475,7 @@ if ($method === 'POST' && $action === 'create_device') {
         'created_at' => gmdate('c'),
         'fully_enabled' => false,
         'fully_audio_enabled' => true,
+        'fully_wallpaper_media' => '',
         'fully_device_id' => ''
     );
 
@@ -2439,6 +2518,7 @@ if ($method === 'POST' && $action === 'clone_playlist') {
         'created_at' => gmdate('c'),
         'fully_enabled' => false,
         'fully_audio_enabled' => true,
+        'fully_wallpaper_media' => '',
         'fully_device_id' => ''
     );
 
@@ -2475,6 +2555,9 @@ if ($method === 'POST' && $action === 'update_device') {
     $fullyAudioEnabled = !isset($body['fully_audio_enabled'])
         ? $entry['fully_audio_enabled']
         : request_flag_enabled($body['fully_audio_enabled']);
+    $fullyWallpaperMedia = !isset($body['fully_wallpaper_media'])
+        ? $entry['fully_wallpaper_media']
+        : sanitize_wallpaper_media_name($body['fully_wallpaper_media']);
     $fullyDeviceId = sanitize_fully_device_id(isset($body['fully_device_id']) ? $body['fully_device_id'] : $entry['fully_device_id']);
     $currentEntry = isset($registry['devices'][$device]) && is_array($registry['devices'][$device]) ? $registry['devices'][$device] : array();
     $lastSync = isset($entry['fully_last_sync']) && is_array($entry['fully_last_sync']) ? $entry['fully_last_sync'] : array();
@@ -2501,6 +2584,7 @@ if ($method === 'POST' && $action === 'update_device') {
         'created_at' => $entry['created_at'],
         'fully_enabled' => $fullyEnabled,
         'fully_audio_enabled' => $fullyAudioEnabled,
+        'fully_wallpaper_media' => $fullyWallpaperMedia,
         'fully_device_id' => $fullyDeviceId,
         'fully_settings_template' => $template,
         'fully_settings_template_fetched_at' => $templateFetchedAt,
@@ -2740,12 +2824,14 @@ if ($method === 'POST' && $action === 'rename_media') {
     }
 
     $stats = update_playlists_for_media($oldName, $newName);
+    $wallpaperStats = update_device_wallpaper_references($oldName, $newName);
 
     json_ok(array(
         'ok' => true,
         'name' => $newName,
         'updated_playlists' => $stats['files_updated'],
-        'updated_items' => $stats['items_updated']
+        'updated_items' => $stats['items_updated'],
+        'updated_wallpapers' => $wallpaperStats['devices_updated']
     ));
 }
 
@@ -2766,12 +2852,14 @@ if ($method === 'POST' && $action === 'delete_media') {
     }
 
     $stats = update_playlists_for_media($name, null);
+    $wallpaperStats = update_device_wallpaper_references($name, null);
 
     json_ok(array(
         'ok' => true,
         'name' => $name,
         'updated_playlists' => $stats['files_updated'],
-        'updated_items' => $stats['items_updated']
+        'updated_items' => $stats['items_updated'],
+        'updated_wallpapers' => $wallpaperStats['devices_updated']
     ));
 }
 

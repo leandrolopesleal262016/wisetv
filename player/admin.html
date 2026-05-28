@@ -727,6 +727,10 @@
             Manter audio ligado nesta TV
           </label>
 
+          <label for="deviceFullyWallpaperSelect">Wallpaper do Fully entre videos</label>
+          <select id="deviceFullyWallpaperSelect"></select>
+          <div class="small">Suba uma imagem na biblioteca do WiseTV e selecione aqui. Sem imagem escolhida, o fundo entre videos fica preto sem texto.</div>
+
           <label for="deviceFullyIdInput">Device ID do Fully Cloud</label>
           <input id="deviceFullyIdInput" type="text" placeholder="Ex: 3573dea0-f2d4b6b7" />
 
@@ -849,6 +853,7 @@
     const previewBtn = document.getElementById("previewBtn");
     const deviceFullyEnabledInput = document.getElementById("deviceFullyEnabledInput");
     const deviceFullyAudioEnabledInput = document.getElementById("deviceFullyAudioEnabledInput");
+    const deviceFullyWallpaperSelect = document.getElementById("deviceFullyWallpaperSelect");
     const deviceFullyIdInput = document.getElementById("deviceFullyIdInput");
     const deviceFullyManifestInput = document.getElementById("deviceFullyManifestInput");
     const deviceFullySettingsInput = document.getElementById("deviceFullySettingsInput");
@@ -1085,6 +1090,8 @@
         return {
           enabled: false,
           audio_enabled: true,
+          wallpaper_media: "",
+          wallpaper_url: "",
           device_id: "",
           manifest_url: "",
           settings_url: "",
@@ -1250,6 +1257,37 @@
       updateActionStates();
     }
 
+    function renderFullyWallpaperOptions(selectedMedia = "") {
+      const selectedValue = String(selectedMedia || "").trim();
+      const imageMedia = state.media.filter((item) => item.type === "image");
+      deviceFullyWallpaperSelect.innerHTML = "";
+
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = "Preto padrao (sem imagem)";
+      deviceFullyWallpaperSelect.appendChild(emptyOption);
+
+      imageMedia.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.name;
+        option.textContent = item.name;
+        if (selectedValue && selectedValue === item.name) {
+          option.selected = true;
+        }
+        deviceFullyWallpaperSelect.appendChild(option);
+      });
+
+      if (selectedValue && !imageMedia.some((item) => item.name === selectedValue)) {
+        const missing = document.createElement("option");
+        missing.value = selectedValue;
+        missing.textContent = `${selectedValue} (imagem nao encontrada)`;
+        missing.selected = true;
+        deviceFullyWallpaperSelect.appendChild(missing);
+      } else if (!selectedValue) {
+        deviceFullyWallpaperSelect.value = "";
+      }
+    }
+
     function setBulkTargetDevices(deviceIds) {
       state.bulkTargetDevices = normalizeDeviceList(deviceIds);
       renderPlaylistTargetSelection();
@@ -1268,6 +1306,7 @@
       deviceFriendlyInput.disabled = !hasDevice;
       deviceFullyEnabledInput.disabled = !hasDevice;
       deviceFullyAudioEnabledInput.disabled = !hasDevice || !fullyEnabled;
+      deviceFullyWallpaperSelect.disabled = !hasDevice;
       deviceFullyIdInput.disabled = !hasDevice;
       saveDeviceBtn.disabled = !hasDevice;
       deleteDeviceBtn.disabled = !hasDevice;
@@ -1487,6 +1526,7 @@
         deviceEndpointInput.value = "";
         deviceFullyEnabledInput.checked = false;
         deviceFullyAudioEnabledInput.checked = true;
+        renderFullyWallpaperOptions("");
         deviceFullyIdInput.value = "";
         deviceFullyManifestInput.value = "";
         deviceFullySettingsInput.value = "";
@@ -1501,6 +1541,7 @@
       deviceIdInput.value = device.id;
       deviceFullyEnabledInput.checked = !!fully.enabled;
       deviceFullyAudioEnabledInput.checked = fully.audio_enabled !== false;
+      renderFullyWallpaperOptions(fully.wallpaper_media || "");
       deviceFullyIdInput.value = fully.device_id || "";
 
       const playerUrl = new URL("index.html", window.location.href);
@@ -1530,6 +1571,11 @@
       }
       if (fully.enabled && fully.audio_enabled === false) {
         parts.push("Audio desativado para esta TV. O WiseTV mantem a playlist em loop e ajusta o volume da midia para 0 durante a sincronizacao.");
+      }
+      if (fully.wallpaper_media) {
+        parts.push(`Wallpaper configurado: ${fully.wallpaper_media}.`);
+      } else {
+        parts.push("Sem imagem de wallpaper. O Fully usa um fundo preto limpo entre os videos.");
       }
       if (!fully.device_id) {
         parts.push("Preencha o Device ID exibido no app Fully Video Kiosk desta TV.");
@@ -2166,8 +2212,10 @@
         state.selectedMediaName = "";
       }
 
+      renderFullyWallpaperOptions(getFullyRecord().wallpaper_media || "");
       renderMediaOptions();
       await loadVideoDurations(state.media);
+      renderFullyWallpaperOptions(getFullyRecord().wallpaper_media || "");
       renderMediaOptions();
     }
 
@@ -2468,6 +2516,7 @@
           friendly_name: friendlyName,
           fully_enabled: deviceFullyEnabledInput.checked,
           fully_audio_enabled: deviceFullyAudioEnabledInput.checked,
+          fully_wallpaper_media: deviceFullyWallpaperSelect.value.trim(),
           fully_device_id: fullyDeviceId
         });
 
@@ -2760,6 +2809,10 @@
       updateActionStates();
     });
     deviceFullyAudioEnabledInput.addEventListener("change", () => {
+      renderFullyCloudHint();
+      updateActionStates();
+    });
+    deviceFullyWallpaperSelect.addEventListener("change", () => {
       renderFullyCloudHint();
       updateActionStates();
     });
