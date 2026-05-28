@@ -249,6 +249,7 @@
 
     .status-ok { color: var(--ok); }
     .status-error { color: var(--danger); }
+    .status-pending { color: var(--primary); }
 
     .playlist-list { display: grid; gap: 10px; margin-top: 12px; }
 
@@ -851,20 +852,28 @@
         public_base_configured: false,
         manifest_ready: false,
         settings_ready: false,
-        sync_ready: false,
-        missing_requirements: [],
-        message: ""
-      },
+      sync_ready: false,
+      missing_requirements: [],
+      message: ""
+    },
       saveTimer: null,
       isSaving: false,
+      isSyncingFully: false,
       dragFromIndex: -1
     };
 
     let deferredInstallPrompt = null;
 
-    function setStatus(message, isError = false) {
+    function setStatus(message, isError = false, isPending = false) {
       statusEl.textContent = message || "";
-      statusEl.className = isError ? "status-error" : "status-ok";
+      statusEl.className = isError ? "status-error" : (isPending ? "status-pending" : "status-ok");
+    }
+
+    function setFullySyncLoading(isLoading) {
+      state.isSyncingFully = !!isLoading;
+      syncFullyBtn.textContent = isLoading ? "Sincronizando..." : "Sincronizar com Fully Cloud";
+      updateActionStates();
+      renderFullyCloudHint();
     }
 
     function setUploadLoading(isLoading) {
@@ -1213,7 +1222,7 @@
       previewBtn.disabled = !hasDevice;
       openFullyManifestBtn.disabled = !hasDevice || !deviceFullyManifestInput.value.trim();
       openFullySettingsBtn.disabled = !hasDevice || !fullySettingsReady || !fully.settings_template_ready || !deviceFullySettingsInput.value.trim();
-      syncFullyBtn.disabled = !hasDevice || !fullyEnabled || !fullyDeviceId || !state.fullyCloud.api_configured || !fullySettingsReady;
+      syncFullyBtn.disabled = !hasDevice || !fullyEnabled || !fullyDeviceId || !state.fullyCloud.api_configured || !fullySettingsReady || state.isSyncingFully;
 
       addMediaBtn.disabled = !hasDevice || !hasSelectedMedia;
       viewMediaBtn.disabled = !hasSelectedMedia;
@@ -1478,6 +1487,9 @@
       }
       if (fully.settings_template_fetched_at) {
         parts.push(`Template do Fully atualizado em ${formatIsoDateTime(fully.settings_template_fetched_at)}.`);
+      }
+      if (state.isSyncingFully && state.selectedDevice === device.id) {
+        parts.push("Sincronizacao em andamento. O Fully Cloud ja recebeu o comando e a TV esta importando os settings.");
       }
       if (fully.last_sync_at) {
         const statusLabel = fully.last_sync_status ? ` ${fully.last_sync_status}.` : "";
@@ -2420,8 +2432,15 @@
         setStatus("Selecione uma TV para sincronizar.", true);
         return;
       }
+      if (state.isSyncingFully) {
+        return;
+      }
 
+      const deviceLabel = getDeviceLabel(getDeviceRecord()) || state.selectedDevice;
       try {
+        setFullySyncLoading(true);
+        setStatus(`Fully Cloud: enviando sincronizacao de ${deviceLabel}...`, false, true);
+
         const result = await apiPost("sync_fully_device", {
           device: state.selectedDevice
         });
@@ -2440,9 +2459,25 @@
         const syncText = responseLine && responseLine.statustext
           ? responseLine.statustext
           : "Comando enviado para o Fully Cloud.";
+        const syncStatus = responseLine && responseLine.status
+          ? String(responseLine.status).trim().toLowerCase()
+          : "";
+
+        if (syncStatus === "error") {
+          setStatus(`Fully Cloud: ${syncText}`, true);
+          return;
+        }
+
+        if (/importing settings/i.test(syncText)) {
+          setStatus(`Fully Cloud: comando aceito. ${deviceLabel} esta importando os settings agora.`, false, true);
+          return;
+        }
+
         setStatus(`Fully Cloud: ${syncText}`);
       } catch (error) {
         setStatus(error.message, true);
+      } finally {
+        setFullySyncLoading(false);
       }
     }
 

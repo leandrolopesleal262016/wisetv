@@ -1798,8 +1798,14 @@ function build_fully_settings_payload($device, $registry, $settingsTemplate = nu
         );
     }
 
+    // Force Fully Video Kiosk to use the native media player for direct MP4/image URLs.
+    $settingsPayload['playMedia'] = true;
     $settingsPayload['loopPlaylist'] = true;
     $settingsPayload['autoImportSettings'] = true;
+    $settingsPayload['autoplayVideos'] = true;
+    $settingsPayload['enableFullscreenVideos'] = true;
+    $settingsPayload['showPlayControlsForVideo'] = false;
+    $settingsPayload['showNameForMedia'] = false;
 
     return array(
         'ok' => true,
