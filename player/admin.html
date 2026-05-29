@@ -2434,6 +2434,24 @@
         const statusText = document.createTextNode(row.online ? "Online" : "Offline");
         statusCell.appendChild(dot);
         statusCell.appendChild(statusText);
+        const statusMeta = document.createElement("div");
+        statusMeta.className = "tv-status-code";
+        const sourceLabel = row.source === "fully_cloud"
+          ? "Fully Cloud"
+          : (row.source === "player_heartbeat_fallback"
+            ? "Fallback local"
+            : (row.source === "player_heartbeat" ? "Player web" : "Sem sinal"));
+        const metaParts = [sourceLabel];
+        if (row.player_status) {
+          metaParts.push(row.player_status);
+        }
+        if (row.screen_on === true) {
+          metaParts.push("Tela ligada");
+        } else if (row.screen_on === false) {
+          metaParts.push("Tela desligada");
+        }
+        statusMeta.textContent = metaParts.join(" | ");
+        statusCell.appendChild(statusMeta);
 
         const lastSeenCell = document.createElement("td");
         lastSeenCell.textContent = formatLastSeen(row.last_seen_unix);

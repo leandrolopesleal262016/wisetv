@@ -1744,6 +1744,143 @@ function fully_cloud_set_string_setting($fullyDeviceId, $key, $value)
     ), true, false);
 }
 
+function fully_cloud_fetch_devices($fullyDeviceIds = array())
+{
+    if (fully_cloud_api_email() === '' || fully_cloud_api_key() === '') {
+        return array('ok' => false, 'error' => 'Credenciais do Fully Cloud nao configuradas');
+    }
+
+    $query = array(
+        'apiemail' => fully_cloud_api_email(),
+        'apikey' => fully_cloud_api_key()
+    );
+
+    $ids = array();
+    foreach ((array)$fullyDeviceIds as $deviceId) {
+        $deviceId = sanitize_fully_device_id($deviceId);
+        if ($deviceId !== '') {
+            $ids[$deviceId] = true;
+        }
+    }
+    if (!empty($ids)) {
+        $query['devid'] = implode(',', array_keys($ids));
+    }
+
+    $url = fully_cloud_api_base() . '/cloud/devices?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    $response = http_get_text($url, 20);
+    if (!$response['ok']) {
+        return array('ok' => false, 'error' => 'Falha ao consultar o endpoint de devices do Fully Cloud');
+    }
+
+    $payload = json_decode((string)$response['body'], true);
+    if (!is_array($payload)) {
+        return array('ok' => false, 'error' => 'Resposta invalida do endpoint de devices do Fully Cloud');
+    }
+
+    $status = isset($payload['status']) ? trim((string)$payload['status']) : '';
+    if ($status !== '' && strcasecmp($status, 'OK') !== 0) {
+        return array(
+            'ok' => false,
+            'error' => isset($payload['statustext']) ? trim((string)$payload['statustext']) : 'Fully Cloud retornou erro ao listar devices'
+        );
+    }
+
+    return array(
+        'ok' => true,
+        'devices' => isset($payload['devices']) && is_array($payload['devices']) ? $payload['devices'] : array(),
+        'status' => $status,
+        'statustext' => isset($payload['statustext']) ? trim((string)$payload['statustext']) : '',
+        'status_code' => isset($response['status_code']) ? (int)$response['status_code'] : 0
+    );
+}
+
+function fully_cloud_device_last_seen_unix($cloudDevice, $now = null)
+{
+    $now = $now === null ? time() : (int)$now;
+    if (isset($cloudDevice['lastHeartbeatInfo']) && is_array($cloudDevice['lastHeartbeatInfo'])) {
+        $info = $cloudDevice['lastHeartbeatInfo'];
+        if (isset($info['timestamp']) && is_numeric($info['timestamp'])) {
+            $timestampMs = (float)$info['timestamp'];
+            if ($timestampMs > 0) {
+                return (int)floor($timestampMs / 1000);
+            }
+        }
+    }
+
+    if (isset($cloudDevice['lastHeartbeatAge']) && is_numeric($cloudDevice['lastHeartbeatAge'])) {
+        $age = max(0, (int)$cloudDevice['lastHeartbeatAge']);
+        return max(0, $now - $age);
+    }
+
+    if (isset($cloudDevice['lastHeartbeatTime'])) {
+        $lastHeartbeatTime = trim((string)$cloudDevice['lastHeartbeatTime']);
+        if ($lastHeartbeatTime !== '') {
+            $parsed = strtotime($lastHeartbeatTime . ' UTC');
+            if ($parsed !== false) {
+                return (int)$parsed;
+            }
+        }
+    }
+
+    return 0;
+}
+
+function fully_cloud_presence_map($fullyDeviceIds, $onlineWindow = 180)
+{
+    $onlineWindow = max(1, (int)$onlineWindow);
+    $response = fully_cloud_fetch_devices($fullyDeviceIds);
+    if (!$response['ok']) {
+        return $response;
+    }
+
+    $now = time();
+    $map = array();
+    foreach ($response['devices'] as $cloudDevice) {
+        if (!is_array($cloudDevice)) {
+            continue;
+        }
+
+        $deviceId = '';
+        if (isset($cloudDevice['devid'])) {
+            $deviceId = sanitize_fully_device_id($cloudDevice['devid']);
+        }
+        if ($deviceId === '' && isset($cloudDevice['deviceId'])) {
+            $deviceId = sanitize_fully_device_id($cloudDevice['deviceId']);
+        }
+        if ($deviceId === '') {
+            continue;
+        }
+
+        $lastSeenUnix = fully_cloud_device_last_seen_unix($cloudDevice, $now);
+        $heartbeatInfo = isset($cloudDevice['lastHeartbeatInfo']) && is_array($cloudDevice['lastHeartbeatInfo'])
+            ? $cloudDevice['lastHeartbeatInfo']
+            : array();
+        $playerStatus = isset($heartbeatInfo['playerStatus']) ? trim((string)$heartbeatInfo['playerStatus']) : '';
+        $screenOn = null;
+        if (isset($heartbeatInfo['screenOn'])) {
+            $screenOn = (bool)$heartbeatInfo['screenOn'];
+        }
+
+        $map[$deviceId] = array(
+            'online' => $lastSeenUnix > 0 && (($now - $lastSeenUnix) <= $onlineWindow),
+            'last_seen_unix' => $lastSeenUnix,
+            'last_seen_iso' => $lastSeenUnix > 0 ? gmdate('c', $lastSeenUnix) : null,
+            'player_status' => $playerStatus,
+            'screen_on' => $screenOn,
+            'cloud_status' => isset($heartbeatInfo['cloudStatus']) ? trim((string)$heartbeatInfo['cloudStatus']) : '',
+            'device_name' => isset($heartbeatInfo['deviceName']) ? trim((string)$heartbeatInfo['deviceName']) : '',
+            'raw' => $cloudDevice
+        );
+    }
+
+    return array(
+        'ok' => true,
+        'devices' => $map,
+        'status' => isset($response['status']) ? $response['status'] : '',
+        'statustext' => isset($response['statustext']) ? $response['statustext'] : ''
+    );
+}
+
 function list_playlist_device_ids()
 {
     $devices = array();
@@ -2591,17 +2728,64 @@ if ($method === 'GET' && $action === 'list_device_status') {
     $registry = load_device_registry();
     $now = time();
     $rows = array();
+    $entriesByDevice = array();
+    $fullyDeviceIds = array();
 
     foreach (list_all_device_ids($registry) as $device) {
+        $entry = normalize_registry_entry($device, $registry);
+        $entriesByDevice[$device] = $entry;
+        if ($entry['fully_enabled'] && $entry['fully_device_id'] !== '') {
+            $fullyDeviceIds[] = $entry['fully_device_id'];
+        }
+    }
+
+    $cloudPresence = array();
+    $cloudPresenceError = '';
+    if (!empty($fullyDeviceIds) && fully_cloud_status()['api_configured']) {
+        $cloudResponse = fully_cloud_presence_map($fullyDeviceIds, $onlineWindow);
+        if (!empty($cloudResponse['ok'])) {
+            $cloudPresence = isset($cloudResponse['devices']) && is_array($cloudResponse['devices'])
+                ? $cloudResponse['devices']
+                : array();
+        } elseif (isset($cloudResponse['error'])) {
+            $cloudPresenceError = trim((string)$cloudResponse['error']);
+        }
+    }
+
+    foreach (list_all_device_ids($registry) as $device) {
+        $entry = isset($entriesByDevice[$device]) && is_array($entriesByDevice[$device])
+            ? $entriesByDevice[$device]
+            : normalize_registry_entry($device, $registry);
         $status = read_device_status($device);
         $lastSeen = is_array($status) && isset($status['last_seen_unix']) ? (int)$status['last_seen_unix'] : 0;
         $online = ($lastSeen > 0) && (($now - $lastSeen) <= $onlineWindow);
+        $statusSource = $lastSeen > 0 ? 'player_heartbeat' : 'none';
+        $playerStatus = '';
+        $screenOn = null;
+
+        if ($entry['fully_enabled'] && $entry['fully_device_id'] !== '') {
+            $fullyDeviceId = $entry['fully_device_id'];
+            if (isset($cloudPresence[$fullyDeviceId]) && is_array($cloudPresence[$fullyDeviceId])) {
+                $cloudDevice = $cloudPresence[$fullyDeviceId];
+                $lastSeen = isset($cloudDevice['last_seen_unix']) ? (int)$cloudDevice['last_seen_unix'] : $lastSeen;
+                $online = !empty($cloudDevice['online']);
+                $playerStatus = isset($cloudDevice['player_status']) ? (string)$cloudDevice['player_status'] : '';
+                $screenOn = array_key_exists('screen_on', $cloudDevice) ? $cloudDevice['screen_on'] : null;
+                $statusSource = 'fully_cloud';
+            } elseif ($cloudPresenceError !== '') {
+                $statusSource = 'player_heartbeat_fallback';
+            }
+        }
+
         $rows[] = array(
             'device' => $device,
-            'friendly_name' => normalize_registry_entry($device, $registry)['friendly_name'],
+            'friendly_name' => $entry['friendly_name'],
             'online' => $online,
             'last_seen_unix' => $lastSeen,
-            'last_seen_iso' => $lastSeen > 0 ? gmdate('c', $lastSeen) : null
+            'last_seen_iso' => $lastSeen > 0 ? gmdate('c', $lastSeen) : null,
+            'source' => $statusSource,
+            'player_status' => $playerStatus,
+            'screen_on' => $screenOn
         );
     }
 
@@ -2616,7 +2800,8 @@ if ($method === 'GET' && $action === 'list_device_status') {
         'ok' => true,
         'online_window' => $onlineWindow,
         'server_time_unix' => $now,
-        'devices' => $rows
+        'devices' => $rows,
+        'fully_cloud_error' => $cloudPresenceError
     ));
 }
 
